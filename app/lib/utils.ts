@@ -1,69 +1,88 @@
-import { Revenue } from './definitions';
+import axios from "axios";
 
-export const formatCurrency = (amount: number) => {
+export const formatCurrency = (amount) => {
   return (amount / 100).toLocaleString('en-US', {
     style: 'currency',
     currency: 'USD',
   });
 };
 
-export const formatDateToLocal = (
-  dateStr: string,
-  locale: string = 'en-US',
-) => {
-  const date = new Date(dateStr);
-  const options: Intl.DateTimeFormatOptions = {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  };
-  const formatter = new Intl.DateTimeFormat(locale, options);
-  return formatter.format(date);
+export const fileDbUrl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/databaseFileManager"
+export const optimisation_engine_url = "https://7bcf-86-4-207-130.ngrok-free.app"
+export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/geoboundary'
+
+export const getGeoboundary = async (totalDemandFile, geofenceFile, handler, geoboundaryObject) => {
+  if (!totalDemandFile) {
+    console.log(".tif file is missing.")
+    handler(".tif file is missing.")
+    return
+  }
+  if (!geofenceFile) {
+    console.log(".geojson file is missing.")
+    handler(".geojson file is missing.")
+    return
+  }
+  if (totalDemandFile && geofenceFile) {
+    handler("")
+    try {
+      const totalDemandBase64 = await readFileAsBase64(totalDemandFile);
+      const geofenceBase64 = await readFileAsBase64(geofenceFile);
+
+      const payload = {
+        tif_file: totalDemandBase64,
+        geo_file: geofenceBase64
+      };
+
+      const response = await axios.post(geoboundaryUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      let jsonData = response.data;
+      let parsedResponse = JSON.parse(jsonData.results);
+      const result = {
+        pregnancy_values: parsedResponse
+      }
+      geoboundaryObject.handler(result)
+
+    } catch (error) {
+      console.error('Error reading files or uploading:', error);
+    }
+  }
+}
+
+// GET SAVED FILES
+export const getSavedFiles = async (fileType, username) => {
+  const type = "fetch"
+  const payload = {
+    type: type,
+    username: username,
+    website_sector: fileType
+  }
+  try {
+    console.log('Getting saved files for :', fileType);
+    const response = await axios.post(fileDbUrl, payload, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    console.log('Response received:', response);
+    return response.data; // Return the data from the response
+  } catch (error) {
+    console.error("Error fetching Saved Files:", error.response);
+    return [];
+  }
+}
+
+const readFileAsBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 };
 
-export const generateYAxis = (revenue: Revenue[]) => {
-  // Calculate what labels we need to display on the y-axis
-  // based on highest record and in 1000s
-  const yAxisLabels = [];
-  const highestRecord = Math.max(...revenue.map((month) => month.revenue));
-  const topLabel = Math.ceil(highestRecord / 1000) * 1000;
 
-  for (let i = topLabel; i >= 0; i -= 1000) {
-    yAxisLabels.push(`$${i / 1000}K`);
-  }
 
-  return { yAxisLabels, topLabel };
-};
-
-export const generatePagination = (currentPage: number, totalPages: number) => {
-  // If the total number of pages is 7 or less,
-  // display all pages without any ellipsis.
-  if (totalPages <= 7) {
-    return Array.from({ length: totalPages }, (_, i) => i + 1);
-  }
-
-  // If the current page is among the first 3 pages,
-  // show the first 3, an ellipsis, and the last 2 pages.
-  if (currentPage <= 3) {
-    return [1, 2, 3, '...', totalPages - 1, totalPages];
-  }
-
-  // If the current page is among the last 3 pages,
-  // show the first 2, an ellipsis, and the last 3 pages.
-  if (currentPage >= totalPages - 2) {
-    return [1, 2, '...', totalPages - 2, totalPages - 1, totalPages];
-  }
-
-  // If the current page is somewhere in the middle,
-  // show the first page, an ellipsis, the current page and its neighbors,
-  // another ellipsis, and the last page.
-  return [
-    1,
-    '...',
-    currentPage - 1,
-    currentPage,
-    currentPage + 1,
-    '...',
-    totalPages,
-  ];
-};
