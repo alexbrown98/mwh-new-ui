@@ -104,6 +104,7 @@ function MapComponent(props) {
                     [0.8, 'rgb(217,239,139)'],// Light green
                     [1, 'rgb(26,152,80)']     // Green
                 ],
+
                 reversescale: true
             }
         }] : []),

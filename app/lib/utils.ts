@@ -11,22 +11,27 @@ export const fileDbUrl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com
 export const optimisation_engine_url = "https://7bcf-86-4-207-130.ngrok-free.app"
 export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/geoboundary'
 
-export const getGeoboundary = async (totalDemandFile, geofenceFile, handler, geoboundaryObject) => {
-  if (!totalDemandFile) {
+export const getGeoboundary = async (generateMapObject) => {
+  if (!generateMapObject.totalDemandFile) {
     console.log(".tif file is missing.")
-    handler(".tif file is missing.")
+    generateMapObject.updateGenerateMapAlertText(".tif file is missing.")
     return
   }
-  if (!geofenceFile) {
+  if (!generateMapObject.geofenceFile) {
     console.log(".geojson file is missing.")
-    handler(".geojson file is missing.")
+    generateMapObject.updateGenerateMapAlertText(".geojson file is missing.")
     return
   }
-  if (totalDemandFile && geofenceFile) {
-    handler("")
+  if (!generateMapObject.facilityFile) {
+    console.log(" Facility file is missing.")
+    generateMapObject.updateGenerateMapAlertText("Facility file is missing.")
+    return
+  }
+  if (generateMapObject.facilityFile && generateMapObject.geofenceFile && generateMapObject.totalDemandFile) {
+    generateMapObject.updateGenerateMapAlertText("")
     try {
-      const totalDemandBase64 = await readFileAsBase64(totalDemandFile);
-      const geofenceBase64 = await readFileAsBase64(geofenceFile);
+      const totalDemandBase64 = await readFileAsBase64(generateMapObject.totalDemandFile);
+      const geofenceBase64 = await readFileAsBase64(generateMapObject.geofenceFile);
 
       const payload = {
         tif_file: totalDemandBase64,
@@ -44,7 +49,7 @@ export const getGeoboundary = async (totalDemandFile, geofenceFile, handler, geo
       const result = {
         pregnancy_values: parsedResponse
       }
-      geoboundaryObject.handler(result)
+      generateMapObject.geoboundaryObject.handler(result)
 
     } catch (error) {
       console.error('Error reading files or uploading:', error);

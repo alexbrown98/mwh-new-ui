@@ -145,11 +145,22 @@ export default function Page() {
         // Update the zone1 state if manual input changes
         setZone3(newValue);
     };
-
     const geoboundaryObject =   {
         pregnancyValues,
         handler: setPregnancyValues
     };
+
+    const generateMapObject = {
+        totalDemandFile,
+        facilityFile,
+        geofenceFile,
+        updateGenerateMapAlertText,
+        geoboundaryObject,
+        laborType,
+        latentPhaseType,
+    }
+
+
 
     const zone1Object = {
         name: "Zone1",
@@ -613,7 +624,7 @@ export default function Page() {
 
                         <Box sx={{mt:5}}>
                             <Button
-                                onClick={() => {getGeoboundary(totalDemandFile, geofenceFile, updateGenerateMapAlertText, geoboundaryObject)}}
+                                onClick={() => {getGeoboundary(generateMapObject)}}
                                 variant={'contained'} color={'success'}>Generate Map</Button>
                             {alertVisible && (
                                 <Alert
