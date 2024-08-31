@@ -1,4 +1,7 @@
 import axios from "axios";
+import { authConfig} from "@/awsConfig";
+import {createServerRunner, NextServer} from "@aws-amplify/adapter-nextjs";
+import { fetchAuthSession, getCurrentUser} from "@aws-amplify/auth/server";
 
 export const formatCurrency = (amount) => {
   return (amount / 100).toLocaleString('en-US', {
@@ -10,6 +13,38 @@ export const formatCurrency = (amount) => {
 export const fileDbUrl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/databaseFileManager"
 export const optimisation_engine_url = "https://7bcf-86-4-207-130.ngrok-free.app"
 export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/geoboundary'
+export const saveSessionUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/save_user_session'
+export const loadSessionurl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get_user_session"
+
+export const { runWithAmplifyServerContext } = createServerRunner({
+  config: {
+    Auth: authConfig
+  }
+})
+
+export async function authenticatedUser(context: NextServer.Context) {
+  return await runWithAmplifyServerContext({
+    nextServerContext: context,
+    operation: async (contextSpec) => {
+      try {
+        const session = await fetchAuthSession(contextSpec);
+        if (!session.tokens) {
+          return;
+        }
+        const user = {
+          ...(await getCurrentUser(contextSpec)),
+          isAdmin: false
+        };
+        const groups = session.tokens.accessToken.payload["cognito:groups"];
+        // @ts-ignore
+        user.isAdmin = Boolean(groups && groups.includes("Admins"));
+        return user;
+      } catch ( error ) {
+        console.log(error)
+      }
+    }
+  })
+}
 
 export const getGeoboundary = async (generateMapObject) => {
   if (!generateMapObject.totalDemandFile) {

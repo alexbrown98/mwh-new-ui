@@ -61,7 +61,7 @@ export default function InputSection({fieldObject})  {
                             <Grid item xs={6}>
                                 <Item>
                                     <Box display="flex" justifyContent="center" alignItems="center">
-                                        <FileHandlingButtons/>
+                                        <FileHandlingButtons fileObject={fieldObject.fileObject_1} />
                                     </Box>
                                 </Item>
                             </Grid>
@@ -93,7 +93,7 @@ export default function InputSection({fieldObject})  {
                                 </Grid>
                                 <Grid item xs={6}>
                                     <Item>
-                                        <FileHandlingButtons/>
+                                        <FileHandlingButtons fileObject={fieldObject.fileObject_1}/>
                                     </Item>
                                 </Grid>
                                 <Grid item xs={3}>
@@ -132,7 +132,7 @@ export default function InputSection({fieldObject})  {
                                 </Grid>
                                 <Grid item xs={6}>
                                     <Item>
-                                        <FileHandlingButtons/>
+                                        <FileHandlingButtons fileObject={fieldObject.fileObject_2}/>
                                     </Item>
                                 </Grid>
                                 <Grid item xs={3}>

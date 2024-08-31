@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@aws-amplify/adapter-nextjs": "^1.2.15",
+    "@aws-amplify/auth": "^6.3.16",
     "@emotion/react": "^11.11.4",
     "@emotion/styled": "^11.11.5",
     "@heroicons/react": "^2.0.18",
@@ -18,10 +20,12 @@
     "@types/node": "20.5.7",
     "@vercel/postgres": "^0.5.0",
     "autoprefixer": "10.4.15",
+    "aws-amplify": "^6.5.3",
     "aws-sdk": "^2.1608.0",
     "axios": "^1.6.8",
     "bcrypt": "^5.1.1",
     "clsx": "^2.0.0",
+    "jwt-decode": "^4.0.0",
     "next": "^14.0.2",
     "next-auth": "^5.0.0-beta.17",
     "plotly.js": "^2.32.0",

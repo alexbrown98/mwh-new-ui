@@ -13,7 +13,11 @@ import FacilityDataTable from "@/app/ui/FacilityDataTable";
 import MapComponent from "@/app/ui/MapComponent";
 import ZoneSelector from "@/app/ui/ZoneSelector";
 import * as XLSX from "xlsx";
-import {optimisation_engine_url, getGeoboundary} from "@/app/lib/utils";
+import {saveSessionUrl, getGeoboundary, loadSessionurl} from "@/app/lib/utils";
+import { useSession, signIn, signOut } from "next-auth/react";
+import {redirect} from "next/navigation";
+import { jwtDecode } from "jwt-decode";
+
 
 export const CustomTextInput = ({value, onChange}) => {
     const isError = value !== '' && (isNaN(value) || value < 1 || value > 100);
@@ -32,6 +36,11 @@ export default function Page() {
 
     const [travelSpeedType, setTravelSpeedType] = React.useState('single');
     const [travelSpeedTypeDisplay, setTravelSpeedTypeDisplay] = React.useState('multiple');
+    const [travelSpeedMotorizedUnmapped, setTravelSpeedMotorizedUnmapped] = React.useState();
+    const [travelSpeedMotorizedMapped, setTravelSpeedMotorizedMapped] = React.useState();
+    const [travelSpeedWalkingUnmapped, setTravelSpeedWalkingUnmapped] = React.useState();
+    const [travelSpeedWalkingMapped, setTravelSpeedWalkingMapped] = React.useState();
+
     const [latentPhaseType, setLatentPhaseType] = React.useState('single');
     const [latentPhaseTypeDisplay, setLatentPhaseTypeDisplay] = React.useState('multiple');
     const [laborType, setLaborType] = React.useState('single');
@@ -45,7 +54,12 @@ export default function Page() {
     const [travelSpeedMotorizedDemand, setTravelSpeedMotorizedDemand] = React.useState('100')
     const [latentPhaseMultiDemand, setLatentPhaseMultiDemand] = React.useState('100')
     const [laborMultiDemand, setLaborMultiDemand] = React.useState('100')
-    const [userAuth, setUserAuth] = React.useState('false')
+    const [userAuth, setUserAuth] = React.useState(() => {
+        // Initialize userAuth state from localStorage, default to 'false' if not set
+        const token = localStorage.getItem('id_token');
+        return token ? 'true' : 'false';
+    });    const [loading, setLoading] = React.useState(true);
+
     const [facilityFile, setFacilityFile] = React.useState()
     const [facilityFileName, setFacilityFileName] = React.useState()
     const [facilityFileJson, setFacilityFileJson] = React.useState()
@@ -53,6 +67,14 @@ export default function Page() {
     const [totalDemandFileName, setTotalDemandFileName] = React.useState()
     const [geofenceFile, setGeofenceFile] = React.useState()
     const [geofenceFileName, setGeofenceFileName] = React.useState()
+    const [laborOnsetFileLMP, setLaborOnsetFileLMP] = React.useState()
+    const [laborOnsetFileLMPName, setLaborOnsetFileLMPName] = React.useState()
+    const [laborOnsetFileNoLMP, setLaborOnsetFileNoLMP] = React.useState()
+    const [laborOnsetFileNoLMPName, setLaborOnsetFileNoLMPName] = React.useState()
+    const [latentPhaseFileNuli, setLatentPhaseFileNuli] = React.useState();
+    const [latentPhaseFileNuliName, setLatentPhaseFileNuliName] = React.useState();
+    const [latentPhaseFileMulti, setLatentPhaseFileMulti] = React.useState();
+    const [latentPhaseFileMultiName, setLatentPhaseFileMultiName] = React.useState();
     const [zone1, setZone1] = React.useState('');
     const [zone1Selected, setZone1Selected] = React.useState('true')
     const [zone1Manual, setZone1Manual] = React.useState('');
@@ -66,6 +88,8 @@ export default function Page() {
     const [alertVisible, setAlertVisible] = React.useState(false);
     const [generateMapAlertText, setGenerateMapAlertText] = React.useState('This Alert displays the default close icon.');
     const [pregnancyValues, setPregnancyValues] = React.useState(null)
+    const [username, setUsername] = React.useState("")
+    const [sessionName, setSessionName] = React.useState("")
 
     const handleGenerateMapAlertClose = () => {
         setAlertVisible(false);
@@ -208,7 +232,38 @@ export default function Page() {
         fileType: "Geofence File (.geojson)",
         fileClearHandler: handleGeofenceClear,
         website_sector: "geo-plot"
+    }
 
+    const laborOnsetFileObjectLMP = {
+        fileName: laborOnsetFileLMPName,
+        fileHandler: handleLaborOnsetLMPUpload,
+        fileType: "Labor Onset LMP (.csv)",
+        fileClearHandler: handleLaborOnsetLMPClear,
+        website_sector: "lmp-labour"
+    }
+
+    const laborOnsetFileObjectNoLMP = {
+        fileName: laborOnsetFileNoLMPName,
+        fileHandler: handleLaborOnsetNoLMPUpload,
+        fileType: "Labor Onset No LMP (.csv)",
+        fileClearHandler: handleLaborOnsetNoLMPClear,
+        website_sector: "no-lmp-labour"
+    }
+
+    const latentPhaseFileObjectNuli = {
+        fileName: latentPhaseFileNuliName,
+        fileHandler: handleLatentPhaseNuliUpload,
+        fileType: "Latent Phase Nulliparous (.csv)",
+        fileClearHandler: handleLatentPhaseNuliClear,
+        website_sector: "nulliparous",
+    }
+
+    const latentPhaseFileObjectMulti = {
+        fileName: latentPhaseFileMultiName,
+        fileHandler: handleLatentPhaseMultiUpload,
+        fileType: "Latent Phase Multiparous (.csv)",
+        fileClearHandler: handleLatentPhaseMultiClear,
+        website_sector: "multiparous",
     }
 
     function handleFacilityUpload(event) {
@@ -255,6 +310,49 @@ export default function Page() {
         setGeofenceFileName(null)
     }
 
+    function handleLaborOnsetLMPUpload(event) {
+        if (event.target.files[0] && event.target.files[0].name) {
+            setLaborOnsetFileLMP(event.target.files[0])
+            setLaborOnsetFileLMPName(event.target.files[0].name)
+        }
+    }
+    function handleLaborOnsetLMPClear() {
+        setLaborOnsetFileLMP(null)
+        setLaborOnsetFileLMPName(null)
+    }
+
+    function handleLaborOnsetNoLMPUpload(event) {
+        if (event.target.files[0] && event.target.files[0].name) {
+            setLaborOnsetFileNoLMP(event.target.files[0])
+            setLaborOnsetFileNoLMPName(event.target.files[0].name)
+        }
+    }
+    function handleLaborOnsetNoLMPClear() {
+        setLaborOnsetFileNoLMP(null)
+        setLaborOnsetFileNoLMPName(null)
+    }
+
+    function handleLatentPhaseNuliUpload(event) {
+        if (event.target.files[0] && event.target.files[0].name) {
+            setLatentPhaseFileNuli(event.target.files[0])
+            setLatentPhaseFileNuliName(event.target.files[0].name)
+        }
+    }
+    function handleLatentPhaseNuliClear() {
+        setLatentPhaseFileNuli(null)
+        setLatentPhaseFileNuliName(null)
+    }
+
+    function handleLatentPhaseMultiUpload(event) {
+        if (event.target.files[0] && event.target.files[0].name) {
+            setLatentPhaseFileMulti(event.target.files[0])
+            setLatentPhaseFileMultiName(event.target.files[0].name)
+        }
+    }
+    function handleLatentPhaseMultiClear() {
+        setLatentPhaseFileMulti(null)
+        setLatentPhaseFileMultiName(null)
+    }
 
 
     const handleTravelSpeedDemandTypeChange = () => {
@@ -344,7 +442,18 @@ export default function Page() {
         }
     };
     const handleLogin = () => {
-        setUserAuth('true')
+        window.location.href = "https://mwh.auth.eu-west-2.amazoncognito.com/login?client_id=kp11r8hfcst3dj1nq5f73qdlg&redirect_uri=http://localhost:3000/dashboard&response_type=code"
+        // setUserAuth('true')
+    }
+
+
+    const travelSpeedObject = {
+        type: travelSpeedType,
+        motorized_unmapped: travelSpeedMotorizedUnmapped,
+        motorized_mapped: travelSpeedMotorizedMapped,
+        walking_unmapped: travelSpeedWalkingUnmapped,
+        walking_mapped: travelSpeedWalkingMapped,
+        demand: travelSpeedMotorizedDemand
     }
 
     const latentPhaseObject = {
@@ -359,6 +468,8 @@ export default function Page() {
         sectionName: "B. Latent Phase Duration",
         multiLabel1: "Multiparous",
         multiLabel2: "Nulliparous",
+        fileObject_1: latentPhaseFileObjectMulti,
+        fileObject_2: latentPhaseFileObjectNuli
     }
     const laborObject = {
         typeChangeHandler : handleLaborTypeChange,
@@ -372,15 +483,276 @@ export default function Page() {
         sectionName: "C. Labor Onset Uncertainty",
         multiLabel1: "LMP",
         multiLabel2: "No LMP",
+        fileObject_1: laborOnsetFileObjectLMP,
+        fileObject_2: laborOnsetFileObjectNoLMP
     }
+
+    const handleSaveSession = async () => {
+        console.log("Saving session.")
+        try {
+            const result = await createSessionObject();
+            console.log(result); // Handle success message or update UI
+            // Optionally, update some state or provide feedback to the user
+        } catch (error) {
+            console.error('Error saving session:', error); // Handle error
+            // Optionally, update some state or provide feedback to the user
+        }
+    };
+
+    const createSessionObject = async () => {
+        let latentPhaseSessionObject = createSessionDemandObject(latentPhaseObject)
+        let laborOnsetSessionObject = createSessionDemandObject(laborObject)
+        let travelSpeedSessionObject = createSessionTravelSpeedObject(travelSpeedObject)
+        setUsername(username)
+        setSessionName("sessionNewUi")
+        const sessionObject = {
+            username,
+            session_name: sessionName,
+            session_id: username + '_' + sessionName,
+            demand_data_geofence_file_name: geofenceFileName,
+            demand_data_tif_file_name: totalDemandFileName,
+            demand_data_labor_onset: laborOnsetSessionObject,
+            demand_data_latent_phase: latentPhaseSessionObject,
+            demand_data_travel_speed: travelSpeedSessionObject,
+            facility_data: facilityFileJson,
+            // TODO: remove hardcoded policy objective
+            policy_definition: {
+                num_zones: numZonesSelector,
+                policy_objective: "egalitarian"
+            }
+        }
+        const payload = {item: sessionObject};
+        try {
+            const response = await fetch(saveSessionUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                return "Session saved successfully!";
+            } else {
+                return "Failed to save session.";
+            }
+        } catch (error) {
+            return `Failed to save session: ${error}`;
+        }
+
+    }
+
+    const createSessionTravelSpeedObject = (fieldObject) => {
+        let travelObject = {};
+        if (fieldObject.type ==='single'){
+            travelObject = {
+                single: {
+                    mapped_speed: fieldObject.motorized_mapped,
+                    unmapped_speed: fieldObject.motorized_unmapped
+                }
+            }
+        } else if (fieldObject.type ==='multiple') {
+            travelObject = {
+                multiple : {
+                    motorized: {
+                        mapped_speed: fieldObject.motorized_mapped,
+                        unmapped_speed: fieldObject.motorized_unmapped
+                    },
+                    total_demand: {
+                        type: travelSpeedDemandType,
+                        value: travelSpeedMotorizedDemand
+                    },
+                    walking: {
+                        mapped_speed: fieldObject.walking_mapped,
+                        unmapped_speed: fieldObject.walking_unmapped
+                    }
+                }
+            }
+        }
+        return travelObject;
+    }
+
+    const createSessionDemandObject = (fieldObject) => {
+        let demandObject = {};
+        if (fieldObject.type === 'single') {
+            demandObject = {
+                single: {
+                    file_name: fieldObject.fileObject_1.fileName
+                }
+            };
+        } else if (fieldObject.type === 'multiple') {
+            demandObject = {
+                multiple: {
+                    multiparous_file_name: fieldObject.fileObject_1.fileName,
+                    nuliparous_file_name: fieldObject.fileObject_2.fileName,
+                    total_demand: {
+                        manual_input: fieldObject.demandValue
+                    }
+                }
+            };
+        }
+        return demandObject;
+    }
+
+    const loadSession = async () => {
+        setUsername(username)
+        setSessionName("sessionNewUi")
+
+        console.log(`Getting user session for ${sessionName}`);
+        const payload = {
+            username: "74877d13-99d1-4164-aaaa-0884d86a223c",
+            session_name: "sessionNewUi"
+        };
+
+        try {
+            const response = await fetch(loadSessionurl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                const sessionData = await response.json();
+                console.log(sessionData)
+                populateSessionData(sessionData)
+
+                return sessionData;
+            } else {
+                console.error("Couldn't get session data");
+            }
+        } catch (error) {
+            console.error('Error fetching user session:', error);
+        }
+    }
+
+    const populateSessionData = (sessionObject) => {
+        //TODO: complete this, and add file loading
+        setGeofenceFileName(sessionObject.demand_data_geofence_file_name.S)
+        setTotalDemandFileName(sessionObject.demand_data_tif_file_name.S)
+    }
+
+    React.useEffect(() => {
+        const code = getAuthorizationCode();
+
+        if (code && userAuth === 'false') {
+            // Exchange code for tokens if userAuth is false and code is present
+            exchangeCodeForTokens(code);
+        } else if (!isTokenExpired() && localStorage.getItem('id_token')) {
+            // Set userAuth to true if the token is valid
+            const idToken = localStorage.getItem('id_token');
+            validateAndSetUsername(idToken);
+        }
+
+        // Periodic check for token expiry
+        const intervalId = setInterval(() => {
+            console.log('Checking auth status');
+            if (isTokenExpired()) {
+                handleLogout();
+            }
+        }, 60000); // Check every minute
+
+        // Cleanup interval on component unmount
+        return () => clearInterval(intervalId);
+    }, []);
+
+    function getAuthorizationCode() {
+        const urlParams = new URLSearchParams(window.location.search);
+        console.log('Getting auth code from URL');
+        return urlParams.get('code');
+    }
+
+    function exchangeCodeForTokens(code) {
+        fetch('https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get-auth-token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ code: code, auth_type: 'dev' }),
+        })
+            .then((response) => response.json())
+            .then((data) => {
+                // Remove surrounding quotes from tokens
+                localStorage.setItem('id_token', data.id_token);
+                localStorage.setItem('access_token', data.access_token);
+                const expiryTime = new Date().getTime() + data.expires_in * 1000; // Convert to milliseconds
+                localStorage.setItem('token_expiry', expiryTime);
+                localStorage.setItem('userAuth', 'true'); // Store userAuth status
+                window.history.replaceState(null, null, window.location.pathname); // Remove the code from the URL
+                setUserAuth('true'); // Update state to reflect the user is authenticated
+                console.log('Auth token set');
+                validateAndSetUsername(data.access_token);
+
+            })
+            .catch((error) => {
+                console.error('Error exchanging code for tokens:', error);
+            });
+    }
+
+    function validateAndSetUsername(idToken) {
+        if (validateToken(idToken)) {
+            const username = getUsernameFromToken(idToken);
+            setUsername(username);
+        } else {
+            handleLogout()
+        };
+    }
+
+    function validateToken(token) {
+        if (!token) {
+            return false
+        }
+        return fetch('https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/validate-token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ access_token: token }),
+        })
+            .then((response) => {
+                return response.status===200;
+            })
+            .catch((error) => {
+                console.error('Error validating token:', error);
+                return false;
+            });
+    }
+
+    function getUsernameFromToken(token) {
+        try {
+            const decodedToken = jwtDecode(token);
+            const username = decodedToken['cognito:username'] || decodedToken['username'] || decodedToken['sub'];
+            console.log("Username is " + username)
+            return username;
+        } catch (error) {
+            console.error('Error decoding token:', error);
+            return null;
+        }
+    }
+
+    function isTokenExpired() {
+        const tokenExpiry = parseInt(localStorage.getItem('token_expiry'), 10);
+        return !tokenExpiry || new Date().getTime() > tokenExpiry;
+    }
+
+    function handleLogout() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('token_expiry');
+        localStorage.removeItem('id_token');
+        localStorage.removeItem('userAuth');
+        setUserAuth('false');
+        location.reload();
+    }
+
     return (
         <Container maxWidth={'false'}>
             {userAuth == 'true' && (
                 <Box>
-                    <Navbar userAuth={userAuth}/>
+                    <Navbar userAuth={userAuth} logoutHandler={handleLogout}/>
                     <Box display="flex" justifyContent="center" alignItems="center" sx={{mt:2}} > {/* Adjust height as needed */}
-                        <Button variant="contained" sx={{mr:5}} >Load Session</Button>
-                        <Button variant="contained" color='secondary'>Save Session</Button>
+                        <Button onClick={loadSession} variant="contained" sx={{mr:5}} >Load Session</Button>
+                        <Button onClick={handleSaveSession} variant="contained" color='secondary'>Save Session</Button>
                     </Box>
                     {/*Demand Data Input*/}
                     <Box sx={{mt: 3}} id={'section1'}>
@@ -701,7 +1073,7 @@ export default function Page() {
                 </Box>
             )}
             {userAuth == 'false' && (
-                <Navbar userAuth={userAuth} loginHandler={handleLogin}/>
+                <Navbar userAuth={userAuth} loginHandler={handleLogin} logoutHandler={handleLogout}/>
             )}
 
 

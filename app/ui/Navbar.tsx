@@ -10,7 +10,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
 import {Button} from "@mui/material";
 
-export default function MenuAppBar({userAuth, loginHandler}) {
+export default function MenuAppBar({userAuth, loginHandler, logoutHandler}) {
     const [auth, setAuth] = React.useState(userAuth);
     const [anchorEl, setAnchorEl] = React.useState(null);
 
@@ -62,7 +62,7 @@ export default function MenuAppBar({userAuth, loginHandler}) {
                             >
 
                                 <MenuItem onClick={handleClose}>
-                                    <Button variant={'contained'} color={'error'}>Logout</Button>
+                                    <Button onClick={logoutHandler} variant={'contained'} color={'error'}>Logout</Button>
                                 </MenuItem>
                             </Menu>
                         </div>
