@@ -3,11 +3,14 @@ import Plot from 'react-plotly.js';
 
 const defaultProps = {
     facilityFileJson: null,
-    geoboundaryData: null
+    geoboundaryData: null,
+    costMatrixData: null,
+    costAndOptimizationData: null
 }
 function MapComponent(props) {
     const [facilityData, setFacilityData] = React.useState(null);
     const [geoboundaryData, setGeoboundaryData] = React.useState(null);
+    const [plotData, setPlotData] = React.useState([]); // State to store plot data
 
     React.useEffect(() => {
         if (props.facilityFileJson) {
@@ -25,6 +28,12 @@ function MapComponent(props) {
             setGeoboundaryData(null);
         }
     }, [props.geoboundaryData]);
+
+    React.useEffect(() => {
+        if (props.costAndOptimizationData) {
+            updateMapWithCostAndOptimization(props.costAndOptimizationData);
+        }
+    }, [props.costAndOptimizationData]);
 
     const processFacilityData = (data) => {
         console.log(data)
@@ -54,6 +63,63 @@ function MapComponent(props) {
             value: Object.values(Value)
         };
     };
+
+    const updateMapWithCostAndOptimization = (costAndOptimizationData) => {
+        console.log('Update map with cost and optimization');
+
+        if (costAndOptimizationData) {
+            // Parse the JSON string if necessary
+            let parsedData;
+            try {
+                parsedData = typeof costAndOptimizationData === 'string'
+                    ? JSON.parse(costAndOptimizationData)
+                    : costAndOptimizationData;
+            } catch (e) {
+                console.error('Failed to parse cost and optimization data:', e);
+                return;
+            }
+
+            const optimizationData = parsedData['cost-and-optimization'];
+
+            if (optimizationData) {
+                // Extract the data from the structure
+                const lats = Object.values(optimizationData.lat);
+                const lons = Object.values(optimizationData.lon);
+                const times = Object.values(optimizationData.time_sec_post);
+
+                // Check if the trace for 'Travel time area' already exists
+                const travelTimeAreaExists = plotData.some(trace => trace.name === 'Travel time area');
+
+                if (!travelTimeAreaExists) {
+                    // Create a new trace for the map
+                    const newTraceCost = {
+                        type: 'scattermapbox',
+                        name: 'Travel time area',
+                        lat: lats, // Extract latitude
+                        lon: lons, // Extract longitude
+                        text: times.map(time => `<b> Time: </b>${Math.round(time)} mins <br>`), // Generate text for each point
+                        marker: {
+                            size: 11,
+                            color: times, // Color based on time
+                            colorscale: 'rdylgn',
+                            reversescale: false
+                        }
+                    };
+
+                    // Update the state with the new trace
+                    setPlotData(prevData => {
+                        const updatedData = [...prevData, newTraceCost];
+                        return updatedData;
+                    });
+                }
+            } else {
+                console.log("Cost optimization data doesn't exist; skip adding to map");
+            }
+        } else {
+            console.log("Cost optimization data doesn't exist; skip adding to map");
+        }
+    };
+
 
     const layout = facilityData ? {
         mapbox: {
@@ -108,6 +174,7 @@ function MapComponent(props) {
                 reversescale: true
             }
         }] : []),
+        ...plotData,
         ...(facilityData ? [{
             type: 'scattermapbox',
             name: 'Health Facility (HF)',

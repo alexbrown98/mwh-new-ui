@@ -5,13 +5,6 @@ import Button from "@mui/material/Button";
 import axios from "axios";
 
 
-const rows = [
-    { id: 1, facility: 'Bah-Ta Clinic', district: 'Kokoya', patientBeds: 5, assignedMwh: 'Bah-Ta Clinic'},
-    { id: 2, facility: 'Degei Clinic', district: 'Fuamah', patientBeds: 8, assignedMwh: 'Degei Clinic'},
-    { id: 3, facility: 'Haindi Clinic', district: 'Kokoya', patientBeds: 2, assignedMwh: 'Haindi Clinic'},
-    { id: 4, facility: 'Naama Clinic', district: 'Kokoya', patientBeds: 0, assignedMwh: 'Naama Clinic'},
-];
-
 const defaultProps = {
     filename: "",
     fileJson: null

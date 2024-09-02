@@ -13,11 +13,10 @@ import FacilityDataTable from "@/app/ui/FacilityDataTable";
 import MapComponent from "@/app/ui/MapComponent";
 import ZoneSelector from "@/app/ui/ZoneSelector";
 import * as XLSX from "xlsx";
-import {saveSessionUrl, getGeoboundary, loadSessionurl} from "@/app/lib/utils";
-import { useSession, signIn, signOut } from "next-auth/react";
-import {redirect} from "next/navigation";
-import { jwtDecode } from "jwt-decode";
-
+import {generateAssignmentMap, getGeoboundary, loadSessionurl, saveSessionUrl} from "@/app/lib/utils";
+import {jwtDecode} from "jwt-decode";
+import Backdrop from '@mui/material/Backdrop';
+import CircularProgress from '@mui/material/CircularProgress';
 
 export const CustomTextInput = ({value, onChange}) => {
     const isError = value !== '' && (isNaN(value) || value < 1 || value > 100);
@@ -59,6 +58,8 @@ export default function Page() {
         const token = localStorage.getItem('id_token');
         return token ? 'true' : 'false';
     });    const [loading, setLoading] = React.useState(true);
+    const [backdropOpen, setBackdropOpen] = React.useState(false);
+    const [backdropText, setBackdropText] = React.useState("");
 
     const [facilityFile, setFacilityFile] = React.useState()
     const [facilityFileName, setFacilityFileName] = React.useState()
@@ -90,6 +91,9 @@ export default function Page() {
     const [pregnancyValues, setPregnancyValues] = React.useState(null)
     const [username, setUsername] = React.useState("")
     const [sessionName, setSessionName] = React.useState("")
+    const [costMatrixData, setCostMatrixData] = React.useState(null);
+    const [costAndOptimizationData, setCostAndOptimizationData] = React.useState(null);
+    const [fileHash, setFileHash] = React.useState()
 
     const handleGenerateMapAlertClose = () => {
         setAlertVisible(false);
@@ -175,6 +179,7 @@ export default function Page() {
     };
 
     const generateMapObject = {
+        facilityFileJson,
         totalDemandFile,
         facilityFile,
         geofenceFile,
@@ -182,6 +187,22 @@ export default function Page() {
         geoboundaryObject,
         laborType,
         latentPhaseType,
+        username,
+        setCostMatrixData,
+        setCostAndOptimizationData,
+        setFileHash,
+        setBackdropOpen,
+        setBackdropText
+    }
+
+    const generateAssignmentMapObject = {
+        speed: travelSpeedType,
+        labor: laborType,
+        latent: latentPhaseType,
+        username: username,
+        tif_filename: totalDemandFileName,
+        table: facilityFileJson,
+        filehash: fileHash
     }
 
 
@@ -749,6 +770,13 @@ export default function Page() {
         <Container maxWidth={'false'}>
             {userAuth == 'true' && (
                 <Box>
+                    <Backdrop
+                        sx={(theme) => ({ color: '#fff', zIndex: theme.zIndex.drawer + 1 })}
+                        open={backdropOpen}
+                    >
+                        <Typography variant={'h3'}>{backdropText}</Typography>
+                        <CircularProgress color="inherit" />
+                    </Backdrop>
                     <Navbar userAuth={userAuth} logoutHandler={handleLogout}/>
                     <Box display="flex" justifyContent="center" alignItems="center" sx={{mt:2}} > {/* Adjust height as needed */}
                         <Button onClick={loadSession} variant="contained" sx={{mr:5}} >Load Session</Button>
@@ -1060,6 +1088,7 @@ export default function Page() {
 
                         <Button variant="contained"
                             sx = {{'mt': 3}}
+                                onClick={() => generateAssignmentMap(generateAssignmentMapObject)}
                         >
                             Generate Assignment Map</Button>
                     </Box>
@@ -1068,7 +1097,7 @@ export default function Page() {
                         <Typography variant="h5" gutterBottom={true}>
                             V - MWH Assignment Map
                         </Typography>
-                        <MapComponent facilityFileJson = {facilityFileJson} geoboundaryData={geoboundaryObject.pregnancyValues}/>
+                        <MapComponent facilityFileJson = {facilityFileJson} geoboundaryData={geoboundaryObject.pregnancyValues} costAndOptimizationData={costAndOptimizationData}/>
                     </Box>
                 </Box>
             )}
