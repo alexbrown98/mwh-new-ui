@@ -4,7 +4,17 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Grid from '@mui/material/Unstable_Grid2';
 import {styled} from '@mui/material/styles';
-import {Alert, Container, FormControlLabel, FormLabel, Radio, RadioGroup, TextField, Typography} from "@mui/material";
+import {
+    Alert,
+    Container,
+    FormControlLabel,
+    FormLabel,
+    LinearProgress,
+    Radio,
+    RadioGroup,
+    TextField,
+    Typography
+} from "@mui/material";
 import FileHandlingButtons from "@/app/ui/FileHandlingButtons";
 import {black} from "next/dist/lib/picocolors";
 import * as React from "react";
@@ -60,6 +70,7 @@ export default function Page() {
     });    const [loading, setLoading] = React.useState(true);
     const [backdropOpen, setBackdropOpen] = React.useState(false);
     const [backdropText, setBackdropText] = React.useState("");
+    const [backdropProgress, setBackdropProgress] = React.useState(0);
 
     const [facilityFile, setFacilityFile] = React.useState()
     const [facilityFileName, setFacilityFileName] = React.useState()
@@ -90,11 +101,12 @@ export default function Page() {
     const [generateMapAlertText, setGenerateMapAlertText] = React.useState('This Alert displays the default close icon.');
     const [pregnancyValues, setPregnancyValues] = React.useState(null)
     const [username, setUsername] = React.useState("")
+    const [idToken, setIdToken] = React.useState();
     const [sessionName, setSessionName] = React.useState("")
     const [costMatrixData, setCostMatrixData] = React.useState(null);
     const [costAndOptimizationData, setCostAndOptimizationData] = React.useState(null);
     const [fileHash, setFileHash] = React.useState()
-
+    const [optimisationEngineData, setOptimisationEngineData] = React.useState(null);
     const handleGenerateMapAlertClose = () => {
         setAlertVisible(false);
     };
@@ -192,7 +204,8 @@ export default function Page() {
         setCostAndOptimizationData,
         setFileHash,
         setBackdropOpen,
-        setBackdropText
+        setBackdropText,
+        setBackdropProgress
     }
 
     const generateAssignmentMapObject = {
@@ -202,7 +215,9 @@ export default function Page() {
         username: username,
         tif_filename: totalDemandFileName,
         table: facilityFileJson,
-        filehash: fileHash
+        filehash: fileHash,
+        idToken: idToken,
+        setOptimisationEngineData: setOptimisationEngineData
     }
 
 
@@ -301,6 +316,7 @@ export default function Page() {
             const worksheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[worksheetName];
             const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            console.log("Updating json with uploaded file.")
             setFacilityFileJson(jsonData)
         }
     }
@@ -696,6 +712,7 @@ export default function Page() {
             .then((data) => {
                 // Remove surrounding quotes from tokens
                 localStorage.setItem('id_token', data.id_token);
+                setIdToken(data.id_token)
                 localStorage.setItem('access_token', data.access_token);
                 const expiryTime = new Date().getTime() + data.expires_in * 1000; // Convert to milliseconds
                 localStorage.setItem('token_expiry', expiryTime);
@@ -771,11 +788,22 @@ export default function Page() {
             {userAuth == 'true' && (
                 <Box>
                     <Backdrop
-                        sx={(theme) => ({ color: '#fff', zIndex: theme.zIndex.drawer + 1 })}
+                        sx={(theme) => ({
+                            color: '#fff',
+                            zIndex: theme.zIndex.drawer + 1,
+                            display: 'flex',             // Add flex display
+                            flexDirection: 'column',     // Align children in a column
+                            justifyContent: 'center',    // Center children vertically
+                            alignItems: 'center'         // Center children horizontally
+                        })}
                         open={backdropOpen}
                     >
-                        <Typography variant={'h3'}>{backdropText}</Typography>
-                        <CircularProgress color="inherit" />
+                        <Typography variant="h4">{backdropText}</Typography>
+                        <LinearProgress
+                            variant="determinate"
+                            value={backdropProgress}
+                            sx={{ width: '50%', mt: 2 }}  // Adjust width and margin-top for spacing
+                        />
                     </Backdrop>
                     <Navbar userAuth={userAuth} logoutHandler={handleLogout}/>
                     <Box display="flex" justifyContent="center" alignItems="center" sx={{mt:2}} > {/* Adjust height as needed */}
@@ -1020,7 +1048,7 @@ export default function Page() {
                         </Typography>
                         <FileHandlingButtons fileObject={facilityFileObject}/>
                         {/*Table*/}
-                        <FacilityDataTable filename={facilityFileName} fileJson={facilityFileJson}/>
+                        <FacilityDataTable filename={facilityFileName} fileJson={facilityFileJson} setFacilityFileJson={setFacilityFileJson}/>
 
                         <Box sx={{mt:5}}>
                             <Button
@@ -1097,7 +1125,9 @@ export default function Page() {
                         <Typography variant="h5" gutterBottom={true}>
                             V - MWH Assignment Map
                         </Typography>
-                        <MapComponent facilityFileJson = {facilityFileJson} geoboundaryData={geoboundaryObject.pregnancyValues} costAndOptimizationData={costAndOptimizationData}/>
+                        <MapComponent facilityFileJson = {facilityFileJson} geoboundaryData={geoboundaryObject.pregnancyValues} costAndOptimizationData={costAndOptimizationData}
+                                      optimizationEngineData = {optimisationEngineData}
+                        />
                     </Box>
                 </Box>
             )}

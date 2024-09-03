@@ -7,11 +7,14 @@ import axios from "axios";
 
 const defaultProps = {
     filename: "",
-    fileJson: null
+    fileJson: null,
+    setFacilityFileJson: null
 }
 
 export default function FacilityDataTable(props = defaultProps) {
     const [rows, setRows] = React.useState([]);
+    const [initialLoad, setInitialLoad] = React.useState(true); // Track initial load
+
     const columns: GridColDef[] = [
         { field: 'facility', headerName: 'Facility', flex: 1, minWidth: 150 },
         { field: 'district', headerName: 'District', flex: 1, minWidth: 150 },
@@ -27,9 +30,9 @@ export default function FacilityDataTable(props = defaultProps) {
         },
     ];
     const processFacilityFile = async () => {
-        if (props.fileJson) {
+        if (props.fileJson && initialLoad) {
             console.log("Processing facility file...");
-            const jsonData = props.fileJson
+            const jsonData = props.fileJson;
             const facilities = jsonData.map((row) => row['Facility']);
             const processedData = jsonData.map((row, index) => ({
                 id: index + 1,
@@ -37,14 +40,17 @@ export default function FacilityDataTable(props = defaultProps) {
                 district: row['District'],
                 patientBeds: row['MWH Patient Beds'],
                 assignedMwh: row['Facility'],
+                latitude: row['Latitude'],
+                longitude: row['Longitude'],
                 facilities
             }));
 
             setRows(processedData);
+            setInitialLoad(false); // Set initial load to false after processing
         } else {
-            console.log("No file.");
+            console.log("No file or not initial load.");
         }
-    }
+    };
 
     React.useEffect(() => {
         processFacilityFile();
@@ -52,14 +58,15 @@ export default function FacilityDataTable(props = defaultProps) {
 
     // Function to export the data as JSON
     const exportDataAsJson = () => {
-        return rows.map(({ id, facilities, assignedMwh, ...rest }) => {
-            // Ensure correct property names
+        return rows.map(({ id, facilities, assignedMwh, latitude, longitude, facility, district, patientBeds }) => {
+            // Ensure correct property names and include Latitude and Longitude
+
             return {
-                Latitude: rest.Latitude,
-                Longitude: rest.Longitude,
-                Facility: rest.facility,
-                District: rest.district,
-                'MWH Patient Beds': rest.patientBeds,
+                Latitude: latitude,
+                Longitude: longitude,
+                Facility: facility,
+                District: district,
+                'MWH Patient Beds': patientBeds,
                 'Assigned MWH': assignedMwh,
             };
         });
@@ -80,21 +87,38 @@ export default function FacilityDataTable(props = defaultProps) {
             });
             console.log('Response received:', response);
 
-            const updatedData = response.data;
+            const updatedData = response.data.modified_data;
 
-            // Process and update the rows with the new data
-            const newRows = updatedData.map((row, index) => ({
-                id: index + 1,
-                Latitude: row['Latitude'],
-                Longitude: row['Longitude'],
-                facility: row.Facility,
-                district: row.District,
-                patientBeds: row['MWH Patient Beds'],
-                assignedMwh: row['Assigned MWH'] || row.Facility, // Update with the new assigned MWH
-                facilities: rows[0].facilities // Preserve the facilities dropdown options
+            // Process and update the rows with the new data, while preserving Latitude and Longitude
+            const newRows = updatedData.map((row, index) => {
+                // Find the original row by facility name to preserve Latitude and Longitude
+                const originalRow = rows.find(originalRow => originalRow.facility === row.Facility);
+                    return {
+                    id: index + 1,
+                    latitude: originalRow ? originalRow.latitude : null,  // Preserve original Latitude
+                    longitude: originalRow ? originalRow.longitude : null, // Preserve original Longitude
+                    facility: row.Facility,
+                    district: row.District,
+                    patientBeds: row['MWH Patient Beds'],
+                    assignedMwh: row['Assigned MWH'] || row.Facility, // Update with the new assigned MWH
+                    facilities: originalRow ? originalRow.facilities : [], // Preserve the facilities dropdown options
+                };
+            });
+            console.log(newRows)
+            setRows(newRows);
+            // Convert newRows back to the original JSON format
+            const updatedJsonData = newRows.map(row => ({
+                Latitude: row.latitude,
+                Longitude: row.longitude,
+                Facility: row.facility,
+                District: row.district,
+                'MWH Patient Beds': row.patientBeds,
+                'Assigned MWH': row.assignedMwh,
             }));
 
-            setRows(newRows);
+            // Call props.setFacilityFileJson with the updated JSON data
+            console.log("Updating json with new mwh assignment.")
+            props.setFacilityFileJson(updatedJsonData);
         } catch (error) {
             console.error("Error fetching MWH assignment:", error);
             console.error("Error response:", error.response);

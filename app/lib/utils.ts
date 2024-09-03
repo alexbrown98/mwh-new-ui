@@ -1,5 +1,7 @@
 import axios from "axios";
 import crypto from 'crypto-js';
+import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {fromCognitoIdentityPool} from "@aws-sdk/credential-providers";
 
 export const formatCurrency = (amount) => {
   return (amount / 100).toLocaleString('en-US', {
@@ -9,11 +11,12 @@ export const formatCurrency = (amount) => {
 };
 
 export const fileDbUrl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/databaseFileManager"
-export const optimisation_engine_url = "https://7bcf-86-4-207-130.ngrok-free.app"
 export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/geoboundary'
 export const saveSessionUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/save_user_session'
 export const loadSessionurl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get_user_session"
 const data_consolidation_lambda_endpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/file-consolidation'
+// const optimisation_engine_url = "https://opt.ewser.com/run-optimization"
+const optimisation_engine_url = "https://acf2a7bc-c344-47e6-8561-a2b599742982.mock.pstmn.io/run-optimization"
 
 
 
@@ -40,8 +43,40 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
   });
 
   if (response.ok) {
-    console.log("Consolidation successful.", response);
+    console.log("Consolidation successful.");
+    let responseJson = await response.json();
+    let parsedBody;
+    try {
+      parsedBody = JSON.parse(responseJson.body);
+    } catch (error) {
+      console.error("Error parsing response body:", error);
+      return;
+    }
+    const s3Key = parsedBody.s3_key;
+    let opti_payload = {
+      s3_key: s3Key,
+      username: generateAssignmentMapObject.username,
+      hash: generateAssignmentMapObject.filehash
+    }
 
+    console.log("Making request to optimisation engine.")
+    const opti_response = await fetch(optimisation_engine_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opti_payload),
+    })
+
+    if (opti_response.ok) {
+      console.log("Optimisation response: ", opti_response)
+      const responseBody = await opti_response.json();
+      const results = await pollForOptimizationFiles(responseBody)
+      console.log("Polling done:", results)
+      generateAssignmentMapObject.setOptimisationEngineData(results);
+    }
+
+
+  } else {
+    console.error("Error in consolidation request:", response.statusText);
   }
 }
 
@@ -66,6 +101,7 @@ export const getGeoboundary = async (generateMapObject) => {
     generateMapObject.updateGenerateMapAlertText("")
     generateMapObject.setBackdropOpen(true);
     generateMapObject.setBackdropText("Step 1/2: Generating travel speed data...")
+    generateMapObject.setBackdropProgress(5);
     try {
       const totalDemandBase64 = await readFileAsBase64(generateMapObject.totalDemandFile);
       const geofenceBase64 = await readFileAsBase64(generateMapObject.geofenceFile);
@@ -87,12 +123,15 @@ export const getGeoboundary = async (generateMapObject) => {
         pregnancy_values: parsedResponse
       }
       generateMapObject.geoboundaryObject.handler(result)
+      generateMapObject.setBackdropProgress(20);
+
       if (result && generateMapObject.facilityFileJson) {
         const { s3Url, filename } = await uploadToS3(generateMapObject.facilityFileJson, result, generateMapObject.username);
         if (s3Url) {
+          generateMapObject.setBackdropProgress(25);
           generateMapObject.setBackdropText("Step 2/2: Generating cost matrix data...")
 
-          const backendResults = await requestToBackend(s3Url, generateMapObject.username, 5, 10); //TODO: change hardcoded
+          const backendResults = await requestToBackend(s3Url, generateMapObject.username, 5, 10, generateMapObject.setBackdropProgress); //TODO: change hardcoded
           if (backendResults) {
             //TODO: if travel speed is multiple, there will be 2 cost and optimization layers
             console.log('Backend processing completed successfully:', backendResults);
@@ -101,6 +140,7 @@ export const getGeoboundary = async (generateMapObject) => {
             generateMapObject.setFileHash(filename)
             generateMapObject.setBackdropText("")
             generateMapObject.setBackdropOpen(false);
+            generateMapObject.setBackdropProgress(0);
           } else {
             console.log('Failed to process backend data.');
           }
@@ -156,7 +196,6 @@ const uploadToS3 = async (facilitiesData, mapData, username) => {
     const filename = generateCombinedFileHash(facilitiesData,mapData);
     const s3Key = `${username}/cost-matrix-inputs/demand-data-and-facilities-${filename}.json`;
     const presignedUrlServiceUrl = `https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get-presigned-url?filename=${s3Key}`;
-    console.log("URL:"+presignedUrlServiceUrl)
     const dataJson = JSON.stringify(dataDict);
     const uploadResult = await sendFileToS3(dataJson, s3Key, presignedUrlServiceUrl, true);
     if (!uploadResult) {
@@ -233,7 +272,7 @@ const sendFileToS3 = async (fileContent, fileName, presignedUrlServiceUrl, needE
   }
 };
 
-const requestToBackend = async (s3Url, username, unmappedSpeed = 5, mappedSpeed = 10) => {
+const requestToBackend = async (s3Url, username, unmappedSpeed = 5, mappedSpeed = 10, setBackdropProgress) => {
   try {
     // Lambda endpoint URLs
     const lambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/distance-to-road';
@@ -258,6 +297,7 @@ const requestToBackend = async (s3Url, username, unmappedSpeed = 5, mappedSpeed 
     const filehash = fileNameParts.split('.')[0];
     // Construct the correct key
 
+    setBackdropProgress(30);
 
     // Send the payload to the first Lambda endpoint
     const response = await fetch(lambdaEndpoint, {
@@ -278,6 +318,8 @@ const requestToBackend = async (s3Url, username, unmappedSpeed = 5, mappedSpeed 
     } else {
       console.log('Distance to road file exists');
     }
+    setBackdropProgress(60);
+
     const parsedPath = parsedUrl.pathname.slice(1);
 
     // Prepare the payload for Cost Matrix
@@ -304,6 +346,7 @@ const requestToBackend = async (s3Url, username, unmappedSpeed = 5, mappedSpeed 
     } else {
       console.log("Cost matrix file doesn't exist.");
     }
+    setBackdropProgress(80);
 
     // If both files are available, perform the final processing
     if (costMatrixFileExists && distanceFileExists) {
@@ -323,6 +366,7 @@ const requestToBackend = async (s3Url, username, unmappedSpeed = 5, mappedSpeed 
         }).catch((error) => {
           console.error('Error in cost and optimization request:', error);
         });
+        setBackdropProgress(90);
 
         // Continue immediately to polling logic
         console.log('Polling for file', `${username}/cost-and-optimization-results/cost-and-optimization-${filehash}.zip`);
@@ -330,6 +374,7 @@ const requestToBackend = async (s3Url, username, unmappedSpeed = 5, mappedSpeed 
         const costAndOptimizationResults = await pollS3ForFile(`${username}/cost-and-optimization-results/cost-and-optimization-${filehash}.zip`, bucketName);
 
         if (costAndOptimizationResults) {
+          setBackdropProgress(100);
 
           return { costMatrixResults, costAndOptimizationResults };
         }
@@ -393,6 +438,64 @@ const pollS3ForFile = async (s3Key, bucketName, maxRetries = 20, retryInterval =
   return null;
 };
 
+async function pollForOptimizationFiles(responseBody) {
+  const waitTime = 5000; // 5 seconds in milliseconds
+  const maxAttempts = 100;
+  const fileCount = responseBody.num_files;
+  const s3OutputDir = responseBody.s3_output_dir;
+  const s3OutputUri = `s3://user-facility-files/${s3OutputDir}`;
+  const parsedUrl = new URL(s3OutputUri.replace("s3://", "https://"));
+  const bucketName = parsedUrl.hostname;
+  const prefix = parsedUrl.pathname.slice(1); // Remove leading '/'
+  console.log(s3OutputDir)
+  console.log(bucketName)
+
+  // Initialize S3 client
+  const s3Client = new S3Client({
+    region: "eu-west-2", // Replace with your region
+    credentials: fromCognitoIdentityPool({
+      clientConfig: { region: "eu-west-2" }, // Replace with your region
+      identityPoolId: "eu-west-2:f891c50a-12ec-47dd-820e-7f7d224309ad", // Replace with your Identity Pool ID
+    }),
+  });
+  let attempt = 0;
+
+  // Helper function to poll the S3 bucket
+  const pollS3 = async (resolve, reject) => {
+    try {
+      const command = new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: prefix,
+      });
+
+      const response = await s3Client.send(command);
+      const contents = response.Contents || [];
+
+      if (contents.length >= fileCount) {
+        // Return the list of keys
+        const result = {
+          output_files: contents.map((obj) => obj.Key),
+        };
+        resolve(result);
+      } else if (attempt < maxAttempts) {
+        // Wait before the next attempt
+        attempt++;
+        console.log(`Polling attempt ${attempt}: ${contents.length} files found, waiting...`);
+        setTimeout(() => pollS3(resolve, reject), waitTime);
+      } else {
+        // Max attempts reached
+        reject(new Error(`Desired file count not met after ${(maxAttempts * waitTime) / 1000} seconds`));
+      }
+    } catch (error) {
+      reject(error);
+    }
+  };
+
+  // Return a promise that resolves when polling is complete
+  return new Promise((resolve, reject) => {
+    pollS3(resolve, reject);
+  });
+}
 
 
 
