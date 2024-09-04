@@ -205,7 +205,9 @@ export default function Page() {
         setFileHash,
         setBackdropOpen,
         setBackdropText,
-        setBackdropProgress
+        setBackdropProgress,
+        travelSpeedMotorizedUnmapped,
+        travelSpeedMotorizedMapped
     }
 
     const generateAssignmentMapObject = {

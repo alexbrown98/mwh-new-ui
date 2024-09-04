@@ -97,6 +97,11 @@ export const getGeoboundary = async (generateMapObject) => {
     generateMapObject.updateGenerateMapAlertText("Facility file is missing.")
     return
   }
+  if (!generateMapObject.travelSpeedMotorizedUnmapped || !generateMapObject.travelSpeedMotorizedMapped) {
+    console.log("No travel speed data.")
+    generateMapObject.updateGenerateMapAlertText("Travel speed data is missing.");
+    return
+  }
   if (generateMapObject.facilityFile && generateMapObject.geofenceFile && generateMapObject.totalDemandFile) {
     generateMapObject.updateGenerateMapAlertText("")
     generateMapObject.setBackdropOpen(true);
@@ -131,7 +136,7 @@ export const getGeoboundary = async (generateMapObject) => {
           generateMapObject.setBackdropProgress(25);
           generateMapObject.setBackdropText("Step 2/2: Generating cost matrix data...")
 
-          const backendResults = await requestToBackend(s3Url, generateMapObject.username, 5, 10, generateMapObject.setBackdropProgress); //TODO: change hardcoded
+          const backendResults = await requestToBackend(s3Url, generateMapObject.username, generateMapObject.travelSpeedMotorizedUnmapped, generateMapObject.travelSpeedMotorizedMapped, generateMapObject.setBackdropProgress); //TODO: change hardcoded
           if (backendResults) {
             //TODO: if travel speed is multiple, there will be 2 cost and optimization layers
             console.log('Backend processing completed successfully:', backendResults);
@@ -272,12 +277,12 @@ const sendFileToS3 = async (fileContent, fileName, presignedUrlServiceUrl, needE
   }
 };
 
-const requestToBackend = async (s3Url, username, unmappedSpeed = 5, mappedSpeed = 10, setBackdropProgress) => {
+const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , setBackdropProgress) => {
   try {
     // Lambda endpoint URLs
     const lambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/distance-to-road';
     const costMatrixLambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/cost-matrix';
-    const costAndOptimizationEndpoint = 'http://18.130.62.148:5000/process';
+    const costAndOptimizationEndpoint = 'https://cmatrix.ewser.com/process';
 
     // Prepare the payload for Distance to Road
     const payload = {

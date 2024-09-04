@@ -261,7 +261,7 @@ function MapComponent(props) {
                         name: 'Travel time area',
                         lat: lats,
                         lon: lons,
-                        text: times.map(time => `<b> Time: </b>${Math.round(time)} mins <br>`),
+                        text: times.map(time => `<b> Time: </b>${Math.round(time/60)} mins <br>`),
                         marker: {
                             size: 11,
                             color: times,
