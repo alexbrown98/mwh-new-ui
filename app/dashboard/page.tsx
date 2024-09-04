@@ -147,6 +147,14 @@ export default function Page() {
         }
     };
 
+    const handleInputChangeMotorizedUnmapped = (event) => {
+        setTravelSpeedMotorizedUnmapped(event.target.value);
+    };
+
+    const handleInputChangeMotorizedMapped = (event) => {
+        setTravelSpeedMotorizedMapped(event.target.value);
+    };
+
     const handleZone1ManualInput = (event) => {
         const newValue = event.target.value;
         setZone1Manual(newValue);
@@ -897,7 +905,10 @@ export default function Page() {
                                                                 <Item>
                                                                     <Box>
                                                                         <Typography>Unmapped Ways Speed (km/h)</Typography>
-                                                                        <TextField size={'small'} id="outlined-basic" variant="outlined" />
+                                                                        <TextField size={'small'} id="outlined-basic" variant="outlined"
+                                                                                   value={travelSpeedMotorizedUnmapped || ''}
+                                                                                   onChange={handleInputChangeMotorizedUnmapped}
+                                                                        />
                                                                     </Box>
                                                                 </Item>
                                                             </Grid>
@@ -905,7 +916,10 @@ export default function Page() {
                                                                 <Item>
                                                                     <Box>
                                                                         <Typography>Mapped Ways Speed (km/h)</Typography>
-                                                                        <TextField size={'small'} id="outlined-basic" variant="outlined" />
+                                                                        <TextField  size={'small'} id="outlined-basic" variant="outlined"
+                                                                                    value={travelSpeedMotorizedMapped || ''}
+                                                                                    onChange={handleInputChangeMotorizedMapped}
+                                                                        />
                                                                     </Box>
                                                                 </Item>
                                                             </Grid>
