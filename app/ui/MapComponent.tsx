@@ -10,7 +10,8 @@ const defaultProps = {
     costMatrixData: null,
     costAndOptimizationData: null,
     optimizationEngineData: null,
-    setAssignmentMapRows: null
+    setAssignmentMapRows: null,
+    backdropObject: null,
 };
 
 function MapComponent(props) {
@@ -86,8 +87,8 @@ function MapComponent(props) {
                     id: hfName,
                     'hfName': hfName,
                     'assignedMwh': assignedMwh,
-                    'MaxPbba': maxPbba,
-                    'MinPbba': minPbba
+                    'maxPbba': maxPbba,
+                    'minPbba': minPbba
                 });
 
                 const latLonData = df.map(row => ({ lat: row['lat'], lon: row['lon'] }));
@@ -107,6 +108,9 @@ function MapComponent(props) {
         // Create traces
         createTraces(allLats, allLons, allPbbaTexts, allNames, pbbaValues);
         props.setAssignmentMapRows(newTableData);
+        props.backdropObject.setBackdropOpen(false);
+        props.backdropObject.setBackdropText("");
+        props.backdropObject.setBackdropProgress(0);
     };
 
     // Convert ReadableStream to a Buffer (compatible with browser)

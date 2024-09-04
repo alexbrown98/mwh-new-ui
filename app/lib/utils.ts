@@ -77,15 +77,16 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
       const results = await pollForOptimizationFiles(responseBody)
       console.log("Polling done:", results)
       generateAssignmentMapObject.setOptimisationEngineData(results);
-      generateAssignmentMapObject.setBackdropProgress(100);
+      generateAssignmentMapObject.setBackdropProgress(90);
     }
 
-    generateAssignmentMapObject.setBackdropText("")
-    generateAssignmentMapObject.setBackdropOpen(false);
-    generateAssignmentMapObject.setBackdropProgress(0);
+
 
   } else {
     console.error("Error in consolidation request:", response.statusText);
+    generateAssignmentMapObject.setBackdropText("")
+    generateAssignmentMapObject.setBackdropOpen(false);
+    generateAssignmentMapObject.setBackdropProgress(0);
   }
 }
 

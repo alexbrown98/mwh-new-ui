@@ -559,6 +559,12 @@ export default function Page() {
         }
     };
 
+    const backdropObject = {
+        setBackdropProgress,
+        setBackdropText,
+        setBackdropOpen
+    }
+
     const createSessionObject = async () => {
         let latentPhaseSessionObject = createSessionDemandObject(latentPhaseObject)
         let laborOnsetSessionObject = createSessionDemandObject(laborObject)
@@ -1171,6 +1177,7 @@ export default function Page() {
                         <MapComponent facilityFileJson = {facilityFileJson} geoboundaryData={geoboundaryObject.pregnancyValues} costAndOptimizationData={costAndOptimizationData}
                                       optimizationEngineData = {optimisationEngineData}
                                       setAssignmentMapRows = {setAssignmentMapRows}
+                                      backdropObject={backdropObject}
                         />
                     </Box>
                 </Box>
