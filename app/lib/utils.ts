@@ -35,6 +35,9 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
     tif_filename: generateAssignmentMapObject.tif_filename,
     table: generateAssignmentMapObject.table
   }
+  generateAssignmentMapObject.setBackdropOpen(true);
+  generateAssignmentMapObject.setBackdropText("Step 1/2: Making call for file consolidation..")
+  generateAssignmentMapObject.setBackdropProgress(10)
   let payload = JSON.stringify(payloadObject);
   const response = await fetch(data_consolidation_lambda_endpoint,{
     method: 'POST',
@@ -58,7 +61,8 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
       username: generateAssignmentMapObject.username,
       hash: generateAssignmentMapObject.filehash
     }
-
+    generateAssignmentMapObject.setBackdropText("Step 2/2: Making call to optimization engine..")
+    generateAssignmentMapObject.setBackdropProgress(50)
     console.log("Making request to optimisation engine.")
     const opti_response = await fetch(optimisation_engine_url, {
       method: 'POST',
@@ -67,13 +71,18 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
     })
 
     if (opti_response.ok) {
+      generateAssignmentMapObject.setBackdropProgress(80);
       console.log("Optimisation response: ", opti_response)
       const responseBody = await opti_response.json();
       const results = await pollForOptimizationFiles(responseBody)
       console.log("Polling done:", results)
       generateAssignmentMapObject.setOptimisationEngineData(results);
+      generateAssignmentMapObject.setBackdropProgress(100);
     }
 
+    generateAssignmentMapObject.setBackdropText("")
+    generateAssignmentMapObject.setBackdropOpen(false);
+    generateAssignmentMapObject.setBackdropProgress(0);
 
   } else {
     console.error("Error in consolidation request:", response.statusText);

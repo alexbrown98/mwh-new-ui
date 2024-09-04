@@ -27,6 +27,7 @@ import {generateAssignmentMap, getGeoboundary, loadSessionurl, saveSessionUrl} f
 import {jwtDecode} from "jwt-decode";
 import Backdrop from '@mui/material/Backdrop';
 import CircularProgress from '@mui/material/CircularProgress';
+import {DataGrid, GridColDef} from "@mui/x-data-grid";
 
 export const CustomTextInput = ({value, onChange}) => {
     const isError = value !== '' && (isNaN(value) || value < 1 || value > 100);
@@ -107,6 +108,15 @@ export default function Page() {
     const [costAndOptimizationData, setCostAndOptimizationData] = React.useState(null);
     const [fileHash, setFileHash] = React.useState()
     const [optimisationEngineData, setOptimisationEngineData] = React.useState(null);
+    const [assignmentMapRows, setAssignmentMapRows] = React.useState(null);
+    const assignmentMapCols: GridColDef[] = [
+        { field: 'hfName', headerName: 'HF Name', flex: 1, minWidth: 150 },
+        { field: 'assignedMwh', headerName: 'Assigned MWH', flex: 1, minWidth: 150 },
+        { field: 'maxPbba', headerName: 'Max PBBA', type: 'number', flex: 1, minWidth: 100, align: 'left', headerAlign: 'left' },
+        { field: 'minPbba', headerName: 'Min PBBA', type: 'number', flex: 1, minWidth: 100, align: 'left', headerAlign: 'left' },
+
+    ];
+
     const handleGenerateMapAlertClose = () => {
         setAlertVisible(false);
     };
@@ -227,7 +237,10 @@ export default function Page() {
         table: facilityFileJson,
         filehash: fileHash,
         idToken: idToken,
-        setOptimisationEngineData: setOptimisationEngineData
+        setOptimisationEngineData: setOptimisationEngineData,
+        setBackdropOpen,
+        setBackdropText,
+        setBackdropProgress
     }
 
 
@@ -1138,11 +1151,26 @@ export default function Page() {
                     </Box>
                     {/*Assignment Map*/}
                     <Box sx={{mt:5}}>
+                        {assignmentMapRows && (
+                            <DataGrid
+                                rows={assignmentMapRows}
+                                columns={assignmentMapCols}
+                                initialState={{
+                                    pagination: {
+                                        paginationModel: { page: 0, pageSize: 25 },
+                                    },
+                                }}
+                                pageSizeOptions={[10, 25, 50]}
+                                checkboxSelection
+                            />
+                        )}
+
                         <Typography variant="h5" gutterBottom={true}>
                             V - MWH Assignment Map
                         </Typography>
                         <MapComponent facilityFileJson = {facilityFileJson} geoboundaryData={geoboundaryObject.pregnancyValues} costAndOptimizationData={costAndOptimizationData}
                                       optimizationEngineData = {optimisationEngineData}
+                                      setAssignmentMapRows = {setAssignmentMapRows}
                         />
                     </Box>
                 </Box>

@@ -10,6 +10,7 @@ const defaultProps = {
     costMatrixData: null,
     costAndOptimizationData: null,
     optimizationEngineData: null,
+    setAssignmentMapRows: null
 };
 
 function MapComponent(props) {
@@ -82,10 +83,10 @@ function MapComponent(props) {
 
                 // Update table data
                 newTableData.push({
-                    'HF name': hfName,
-                    'Assigned MWH': assignedMwh,
-                    'Max PBBA': maxPbba,
-                    'Min PBBA': minPbba
+                    'hfName': hfName,
+                    'assignedMwh': assignedMwh,
+                    'MaxPbba': maxPbba,
+                    'MinPbba': minPbba
                 });
 
                 const latLonData = df.map(row => ({ lat: row['lat'], lon: row['lon'] }));
@@ -104,6 +105,7 @@ function MapComponent(props) {
 
         // Create traces
         createTraces(allLats, allLons, allPbbaTexts, allNames, pbbaValues);
+        props.setAssignmentMapRows(newTableData);
     };
 
     // Convert ReadableStream to a Buffer (compatible with browser)
