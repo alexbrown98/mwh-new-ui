@@ -83,6 +83,7 @@ function MapComponent(props) {
 
                 // Update table data
                 newTableData.push({
+                    id: hfName,
                     'hfName': hfName,
                     'assignedMwh': assignedMwh,
                     'MaxPbba': maxPbba,
