@@ -6,14 +6,22 @@ import Grid from '@mui/material/Unstable_Grid2';
 import {styled} from '@mui/material/styles';
 import {
     Alert,
-    Container,
-    FormControlLabel,
     FormLabel,
     LinearProgress,
     Radio,
     RadioGroup,
     TextField,
-    Typography
+    Typography,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Checkbox,
+    Container,
+    FormControlLabel,
+    Paper
 } from "@mui/material";
 import FileHandlingButtons from "@/app/ui/FileHandlingButtons";
 import {black} from "next/dist/lib/picocolors";
@@ -116,6 +124,22 @@ export default function Page() {
         { field: 'minPbba', headerName: 'Min PBBA', type: 'number', flex: 1, minWidth: 100, align: 'left', headerAlign: 'left' },
 
     ];
+    const [dynamicData, setDynamicData] = React.useState([
+        travelSpeedType === 'single' ? 'N/A' : 'Walking, Motorized',
+        latentPhaseType === 'single' ? 'N/A' : 'Multiparous, Nulliparous',
+        laborType === 'single' ? 'N/A' : 'LMP, No LMP'
+        ,
+    
+    ]);
+
+    React.useEffect(() => {
+        // Update the dynamicData when travelSpeedType changes
+        setDynamicData([
+            travelSpeedType === 'single' ? 'N/A' : 'Walking, Motorized',
+            latentPhaseType === 'single' ? 'N/A' : 'Multiparous, Nulliparous',
+            laborType === 'single' ? 'N/A' : 'LMP, No LMP'
+        ]);
+    }, [travelSpeedType,latentPhaseType,laborType]);
 
     const handleGenerateMapAlertClose = () => {
         setAlertVisible(false);
@@ -207,6 +231,14 @@ export default function Page() {
         pregnancyValues,
         handler: setPregnancyValues
     };
+    const [checkboxValues, setCheckboxValues] = React.useState([0, 0, 0]);
+    const handleCheckboxChange = (index) => {
+    setCheckboxValues((prevValues) => {
+        const newValues = [...prevValues];
+        newValues[index] = newValues[index] === 0 ? 1 : 0; // Toggle between 0 and 1
+        return newValues;
+        });
+    };
 
     const generateMapObject = {
         facilityFileJson,
@@ -240,7 +272,8 @@ export default function Page() {
         setOptimisationEngineData: setOptimisationEngineData,
         setBackdropOpen,
         setBackdropText,
-        setBackdropProgress
+        setBackdropProgress,
+        infoSet: checkboxValues,
     }
 
 
@@ -324,6 +357,7 @@ export default function Page() {
         fileClearHandler: handleLatentPhaseMultiClear,
         website_sector: "multiparous",
     }
+
 
     function handleFacilityUpload(event) {
         if (event.target.files[0] && event.target.files[0].name) {
@@ -505,6 +539,9 @@ export default function Page() {
         window.location.href = "https://mwh.auth.eu-west-2.amazoncognito.com/login?client_id=kp11r8hfcst3dj1nq5f73qdlg&redirect_uri=http://localhost:3000/dashboard&response_type=code"
         // setUserAuth('true')
     }
+    
+
+
 
 
     const travelSpeedObject = {
@@ -1148,6 +1185,39 @@ export default function Page() {
                             <ZoneSelector zoneObject={zone2Object}/>
                             <ZoneSelector zoneObject={zone3Object}/>
                         </Box>
+                        {/*Policy table*/}
+                        <Box sx={{ mt: 5 }}>
+                        <TableContainer component={Paper} sx={{ width: '100%' }}>
+                            <Table aria-label="parameters table">
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell sx={{ width: '80%' }}>Parameters</TableCell>
+                                        <TableCell sx={{ width: '20%' }}>Value Labels</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                        {dynamicData.map((item, index) => (
+                                            <TableRow key={index}>
+                                                <TableCell component="th" scope="row">
+                                                    {item}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <FormControlLabel
+                                                        control={
+                                                            <Checkbox
+                                                                checked={checkboxValues[index] === 1}
+                                                                onChange={() => handleCheckboxChange(index)}
+                                                            />
+                                                        }
+                                                        label=""
+                                                    />
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    </Box>
 
                         <Button variant="contained"
                             sx = {{'mt': 3}}

@@ -15,8 +15,9 @@ export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaw
 export const saveSessionUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/save_user_session'
 export const loadSessionurl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get_user_session"
 const data_consolidation_lambda_endpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/file-consolidation'
-const optimisation_engine_url = "https://opt.ewser.com/run-optimization"
-// const optimisation_engine_url = "https://acf2a7bc-c344-47e6-8561-a2b599742982.mock.pstmn.io/run-optimization"
+//const optimisation_engine_url = "https://opt.ewser.com/run-optimization"
+const optimisation_engine_url = "http://localhost:8090/run-optimization"
+//"https://acf2a7bc-c344-47e6-8561-a2b599742982.mock.pstmn.io/run-optimization"
 
 
 
@@ -59,7 +60,8 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
     let opti_payload = {
       s3_key: s3Key,
       username: generateAssignmentMapObject.username,
-      hash: generateAssignmentMapObject.filehash
+      hash: generateAssignmentMapObject.filehash,
+      info_set: generateAssignmentMapObject.infoSet
     }
     generateAssignmentMapObject.setBackdropText("Step 2/2: Making call to optimization engine..")
     generateAssignmentMapObject.setBackdropProgress(50)
