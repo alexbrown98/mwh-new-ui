@@ -15,8 +15,8 @@ export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaw
 export const saveSessionUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/save_user_session'
 export const loadSessionurl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get_user_session"
 const data_consolidation_lambda_endpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/file-consolidation'
-//const optimisation_engine_url = "https://opt.ewser.com/run-optimization"
-const optimisation_engine_url = "http://localhost:8090/run-optimization"
+const optimisation_engine_url = "https://opt.ewser.com/run-optimization"
+//const optimisation_engine_url = "http://localhost:8090/run-optimization"
 //"https://acf2a7bc-c344-47e6-8561-a2b599742982.mock.pstmn.io/run-optimization"
 
 
