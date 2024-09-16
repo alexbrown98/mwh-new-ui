@@ -15,9 +15,11 @@ export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaw
 export const saveSessionUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/save_user_session'
 export const loadSessionurl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get_user_session"
 const data_consolidation_lambda_endpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/file-consolidation'
-const optimisation_engine_url = "https://opt.ewser.com/run-optimization"
 // const optimisation_engine_url = "https://acf2a7bc-c344-47e6-8561-a2b599742982.mock.pstmn.io/run-optimization"
-
+const optimisation_engine_url = "http://localhost:8090/run-optimization"
+const lambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/distance-to-road';
+const costMatrixLambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/cost-matrix';
+const costAndOptimizationEndpoint = 'http://localhost:5001/process';
 
 
 export const generateAssignmentMap = async (generateAssignmentMapObject) => {
@@ -25,6 +27,30 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
   generateAssignmentMapObject.speed == 'single' ? speed = 'walking' : speed = 'Motorized, Walking'
   generateAssignmentMapObject.labor == 'single' ? labor = 'LMP certain' : 'LMP certain, LMP uncertain'
   generateAssignmentMapObject.latent == 'single' ? latent = 'nulliparous' : 'Multiparous, Nulliparous'
+
+  if (!generateAssignmentMapObject.multi_file) {
+    console.log("Cannot proceed without labor onset file.")
+    return;
+  }
+  if (!generateAssignmentMapObject.lmp_file) {
+    console.log("Cannot proceed without latent phase file.")
+    return;
+  }
+  generateAssignmentMapObject.setBackdropOpen(true);
+  generateAssignmentMapObject.setBackdropText("Step 1/3: Combining input files..")
+  generateAssignmentMapObject.setBackdropProgress(5)
+
+  const empirical_data_s3_key = await
+      combineXlsxFiles(generateAssignmentMapObject.lmp_file,
+          generateAssignmentMapObject.nulli_file, generateAssignmentMapObject.multi_file,
+          generateAssignmentMapObject.username, empirical_data_dir)
+  if (!empirical_data_s3_key) {
+    console.log("Error when combining files.")
+    generateAssignmentMapObject.setBackdropText("")
+    generateAssignmentMapObject.setBackdropOpen(false);
+    generateAssignmentMapObject.setBackdropProgress(0);
+    return;
+  }
 
   let payloadObject = {
     speed,
@@ -35,9 +61,10 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
     tif_filename: generateAssignmentMapObject.tif_filename,
     table: generateAssignmentMapObject.table
   }
+
   generateAssignmentMapObject.setBackdropOpen(true);
-  generateAssignmentMapObject.setBackdropText("Step 1/2: Making call for file consolidation..")
-  generateAssignmentMapObject.setBackdropProgress(10)
+  generateAssignmentMapObject.setBackdropText("Step 2/3: Making call for file consolidation..")
+  generateAssignmentMapObject.setBackdropProgress(15)
   let payload = JSON.stringify(payloadObject);
   const response = await fetch(data_consolidation_lambda_endpoint,{
     method: 'POST',
@@ -53,15 +80,27 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
       parsedBody = JSON.parse(responseJson.body);
     } catch (error) {
       console.error("Error parsing response body:", error);
+      generateAssignmentMapObject.setBackdropText("")
+      generateAssignmentMapObject.setBackdropOpen(false);
+      generateAssignmentMapObject.setBackdropProgress(0);
       return;
     }
+
+    let num_zones_int = mapNumZones(generateAssignmentMapObject.num_zones)
     const s3Key = parsedBody.s3_key;
+    const file_count = parsedBody.file_count
     let opti_payload = {
       s3_key: s3Key,
       username: generateAssignmentMapObject.username,
-      hash: generateAssignmentMapObject.filehash
+      hash: generateAssignmentMapObject.filehash,
+      excel_key: empirical_data_s3_key,
+      objective: generateAssignmentMapObject.objective,
+      num_zones: num_zones_int,
+      zones: getZoneObjects(generateAssignmentMapObject.zone1Object, generateAssignmentMapObject.zone2Object,
+          generateAssignmentMapObject.zone3Object, num_zones_int),
     }
-    generateAssignmentMapObject.setBackdropText("Step 2/2: Making call to optimization engine..")
+
+    generateAssignmentMapObject.setBackdropText("Step 3/3: Making call to optimization engine..")
     generateAssignmentMapObject.setBackdropProgress(50)
     console.log("Making request to optimisation engine.")
     const opti_response = await fetch(optimisation_engine_url, {
@@ -74,10 +113,17 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
       generateAssignmentMapObject.setBackdropProgress(80);
       console.log("Optimisation response: ", opti_response)
       const responseBody = await opti_response.json();
-      const results = await pollForOptimizationFiles(responseBody)
-      console.log("Polling done:", results)
-      generateAssignmentMapObject.setOptimisationEngineData(results);
-      generateAssignmentMapObject.setBackdropProgress(90);
+      try {
+        const results = await pollForOptimizationFiles(responseBody, file_count)
+        console.log("Polling done:", results)
+        generateAssignmentMapObject.setOptimisationEngineData(results);
+        generateAssignmentMapObject.setBackdropProgress(90);
+      } catch (e) {
+        console.error("An error occurred when polling for results.", e)
+        generateAssignmentMapObject.setBackdropText("")
+        generateAssignmentMapObject.setBackdropOpen(false);
+        generateAssignmentMapObject.setBackdropProgress(0);
+      }
     }
 
 
@@ -110,6 +156,16 @@ export const getGeoboundary = async (generateMapObject) => {
   if (!generateMapObject.travelSpeedMotorizedUnmapped || !generateMapObject.travelSpeedMotorizedMapped) {
     console.log("No travel speed data.")
     generateMapObject.updateGenerateMapAlertText("Travel speed data is missing.");
+    return
+  }
+  if (!generateMapObject.latentPhaseFileMulti) {
+    console.log("Latent Phase file is missing.")
+    generateMapObject.updateGenerateMapAlertText("Latent Phase file is missing.");
+    return
+  }
+  if (!generateMapObject.laborOnsetFileLMP) {
+    console.log("Labor Onset file is missing.")
+    generateMapObject.updateGenerateMapAlertText("Labor Onset file is missing.");
     return
   }
   if (generateMapObject.facilityFile && generateMapObject.geofenceFile && generateMapObject.totalDemandFile) {
@@ -158,12 +214,19 @@ export const getGeoboundary = async (generateMapObject) => {
             generateMapObject.setBackdropProgress(0);
           } else {
             console.log('Failed to process backend data.');
+            //TODO: add feedback here
+            generateMapObject.setBackdropText("")
+            generateMapObject.setBackdropOpen(false);
+            generateMapObject.setBackdropProgress(0);
           }
         }
       }
 
     } catch (error) {
       console.error('Error reading files or uploading:', error);
+      generateMapObject.setBackdropText("")
+      generateMapObject.setBackdropOpen(false);
+      generateMapObject.setBackdropProgress(0);
     }
   }
 }
@@ -242,6 +305,48 @@ const generateCombinedFileHash = (file1Content, file2Content) => {
   return crypto.MD5(combinedStr).toString();
 };
 
+const mapNumZones = (numZones) => {
+  let numZonesInt;
+  switch (numZones) {
+    case "one":
+      numZones = 1;
+      break
+    case "two":
+      numZonesInt = 2;
+      break;
+    case "three":
+      numZonesInt = 3;
+      break;
+    default:
+      numZonesInt = -1;
+      console.log("Unable to map number of zones.")
+  }
+  return numZonesInt
+}
+
+const getZoneObjects = (zone1Object, zone2Object, zone3Object, numZones) => {
+  const zoneObjects = [zone1Object, zone2Object, zone3Object].slice(0, numZones);
+  const typeMapping = {
+    'no_mwh': 'no_mwh',
+    'computed': 'computed'
+  };
+
+  return zoneObjects.map(zone => {
+    const { value, manualValue } = zone;
+
+    if (value === 'manual') {
+      return { type: { manual: manualValue } };
+    } else if (value in typeMapping) {
+      return { type: typeMapping[value] };
+    } else {
+      // Handle unexpected values if necessary
+      return { type: 'unknown' };
+    }
+  });
+};
+
+
+
 const sendFileToS3 = async (fileContent, fileName, presignedUrlServiceUrl, needEncoding = false) => {
   try {
     // Step 1: Get the Pre-Signed URL from the backend service
@@ -289,11 +394,6 @@ const sendFileToS3 = async (fileContent, fileName, presignedUrlServiceUrl, needE
 
 const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , setBackdropProgress) => {
   try {
-    // Lambda endpoint URLs
-    const lambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/distance-to-road';
-    const costMatrixLambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/cost-matrix';
-    const costAndOptimizationEndpoint = 'https://7ddb-164-215-30-4.ngrok-free.app/process';
-
     // Prepare the payload for Distance to Road
     const payload = {
       file_url: s3Url,
@@ -314,7 +414,7 @@ const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , se
 
     setBackdropProgress(30);
 
-    // Send the payload to the first Lambda endpoint
+    // Send the payload to the first Lambda endpoint TODO: either fix response or dont use await
     const response = await fetch(lambdaEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -374,15 +474,19 @@ const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , se
 
       try {
         // Make the fetch request without awaiting the response
-        fetch(costAndOptimizationEndpoint, {
+        const cost_response = await fetch(costAndOptimizationEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payloadCostAndOptimization),
-        }).catch((error) => {
-          console.error('Error in cost and optimization request:', error);
-        });
-        setBackdropProgress(90);
+        })
 
+        if (!cost_response.ok) {
+          // there was an issue with the cost matrix call
+          console.log("Issue with cost matrix server.")
+        return null;
+        }
+
+        setBackdropProgress(90);
         // Continue immediately to polling logic
         console.log('Polling for file', `${username}/cost-and-optimization-results/cost-and-optimization-${filehash}.zip`);
 
@@ -390,7 +494,6 @@ const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , se
 
         if (costAndOptimizationResults) {
           setBackdropProgress(100);
-
           return { costMatrixResults, costAndOptimizationResults };
         }
       } catch (error) {
@@ -453,10 +556,9 @@ const pollS3ForFile = async (s3Key, bucketName, maxRetries = 20, retryInterval =
   return null;
 };
 
-async function pollForOptimizationFiles(responseBody) {
+async function pollForOptimizationFiles(responseBody, fileCount) {
   const waitTime = 5000; // 5 seconds in milliseconds
   const maxAttempts = 100;
-  const fileCount = responseBody.num_files;
   const s3OutputDir = responseBody.s3_output_dir;
   const s3OutputUri = `s3://user-facility-files/${s3OutputDir}`;
   const parsedUrl = new URL(s3OutputUri.replace("s3://", "https://"));
@@ -512,6 +614,152 @@ async function pollForOptimizationFiles(responseBody) {
   });
 }
 
+export async function uploadFileToS3(username, sectionId, uploadedFile, uploadedFilename) {
+  try {
+    const s3Filename = generateFileName(username, sectionId, uploadedFilename);
+    const presignedUrlServiceUrl = `https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get-presigned-url?filename=${uploadedFilename}`;
+
+    // Upload to S3 without any base64 conversion
+    const uploadResult = await s3Upload(uploadedFile, s3Filename, presignedUrlServiceUrl);
+    if (!uploadResult) {
+      console.log("Failed to upload file to S3");
+      return null; // Early return for failure
+    }
+
+    // Upload file metadata to database
+    const dbUploadResult = await uploadItemToDatabase(username, sectionId, uploadedFilename, s3Filename);
+    if (!dbUploadResult) {
+      console.log("Failed to upload item to database.");
+      return null;
+    }
+
+    console.log("Uploaded file successfully");
+    return s3Filename; // Return the S3 key if successful
+  } catch (error) {
+    console.error("Error during file upload:", error);
+    return null;
+  }
+}
 
 
 
+function  generateFileName(username, section, filename) {
+  return `${username}/${section}/${filename}`;
+}
+
+export async function s3Upload(fileContent, fileName, presignedUrlServiceUrl) {
+  try {
+    // Get the pre-signed URL from the backend service
+    const presignedUrlResponse = await axios.get(presignedUrlServiceUrl, {
+      params: { filename: fileName }
+    });
+
+    const presignedUrl = presignedUrlResponse.data.presigned_url;
+
+    // Upload the raw file (binary data) directly to S3 using the presigned URL
+    const uploadResponse = await axios.put(presignedUrl, fileContent, {
+      headers: {
+        'Content-Type': fileContent.type // Use the actual content type of the file
+      }
+    });
+
+    return uploadResponse.status === 200; // Return true if upload is successful
+  } catch (error) {
+    console.error("Error uploading file to S3:", error);
+    return null;
+  }
+}
+
+async function uploadItemToDatabase(username, section, filename, s3Key) {
+  const lambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/databaseFileManager';
+  const payload = {
+    type: 'upload',
+    username: username,
+    website_sector: section,
+    filename: filename,
+    s3_key: s3Key,
+  };
+
+  try {
+    const response = await axios.post(lambdaEndpoint, payload);
+    return response.status === 200;
+  } catch (error) {
+    console.error('Error uploading file metadata to database:', error);
+    return null;
+  }
+}
+
+
+import * as XLSX from 'xlsx';
+import {empirical_data_dir} from "@/app/lib/constants";
+import {TextField} from "@mui/material";
+import {styled} from "@mui/material/styles";
+import Box from "@mui/material/Box";
+import {black} from "next/dist/lib/picocolors";
+import * as React from "react";
+
+export async function combineXlsxFiles(laborOnsetFileLMP, latentPhaseFileNuli, latentPhaseFileMulti, username, uploadDir) {
+  // Create a new workbook
+  const newWorkbook = XLSX.utils.book_new();
+
+  // Helper function to read a file and extract the sheet data
+  const readUploadedFile = async (file) => {
+    if (!file) return null;
+
+    // Read the file as binary string
+    const data = await file.arrayBuffer(); // Reading file content as array buffer
+    const workbook = XLSX.read(data, { type: 'array' });
+
+    // Assume the uploaded file only contains a single sheet, return the first sheet data
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+    return worksheet ? XLSX.utils.sheet_to_json(worksheet, { header: 1 }) : null; // Return the sheet data
+  };
+
+  // 1. Populate the Multiparous Latent sheet
+  const multiparousLatentSheet = await readUploadedFile(latentPhaseFileMulti);
+  const multiparousLatentWS = XLSX.utils.aoa_to_sheet(multiparousLatentSheet || []);
+  XLSX.utils.book_append_sheet(newWorkbook, multiparousLatentWS, 'Multiparous Latent');
+
+  // 2. Populate the Nulliparous Latent sheet
+  const nulliparousLatentSheet = await readUploadedFile(latentPhaseFileNuli);
+  const nulliparousLatentWS = XLSX.utils.aoa_to_sheet(nulliparousLatentSheet || []);
+  XLSX.utils.book_append_sheet(newWorkbook, nulliparousLatentWS, 'Nulliparous Latent');
+
+  // 3. Populate the Gestation sheet
+  const gestationSheet = await readUploadedFile(laborOnsetFileLMP);
+  const gestationWS = XLSX.utils.aoa_to_sheet(gestationSheet || []);
+  XLSX.utils.book_append_sheet(newWorkbook, gestationWS, 'Gestation');
+
+  // Export the new workbook as binary string
+  const workbookBinary = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'binary' });
+
+  // Convert the binary string to an ArrayBuffer and then to a Blob
+  const combinedFile = new Blob([s2ab(workbookBinary)], { type: 'application/octet-stream' });
+  const s3Key = await uploadFileToS3(username, uploadDir, combinedFile, 'CombinedData.xlsx');
+// // Create a download link and trigger download
+//   const downloadLink = document.createElement('a');
+//   downloadLink.href = URL.createObjectURL(combinedFile);
+//   downloadLink.download = 'CombinedData.xlsx';
+//   document.body.appendChild(downloadLink);
+//   downloadLink.click();
+//   document.body.removeChild(downloadLink);
+  if (s3Key) {
+    console.log("Combined file uploaded to S3 with key:", s3Key);
+    return s3Key;
+  } else {
+    console.log("Failed to upload the combined file to S3");
+    return null;
+  }
+
+}
+
+// Helper function to convert binary string to an ArrayBuffer
+function s2ab(s) {
+  const buf = new ArrayBuffer(s.length); // Create a buffer
+  const view = new Uint8Array(buf); // Create a view into the buffer
+  for (let i = 0; i < s.length; i++) {
+    view[i] = s.charCodeAt(i) & 0xFF; // Fill buffer with binary data
+  }
+  return buf;
+}

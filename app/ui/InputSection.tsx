@@ -2,7 +2,8 @@ import FileHandlingButtons from "@/app/ui/FileHandlingButtons";
 import * as React from "react";
 import {Box, Button, TextField, Typography} from "@mui/material";
 import Grid from '@mui/material/Unstable_Grid2';
-import {CustomTextInput, Item} from "@/app/dashboard/page";
+
+import {CustomTextInput, Item} from "@/app/dashboard/customTextInput";
 
 
 export default function InputSection({fieldObject})  {
@@ -11,11 +12,14 @@ export default function InputSection({fieldObject})  {
             <Typography variant="h5" gutterBottom={true}>
                 {fieldObject.sectionName}
             </Typography>
-            <Button
-                variant="contained"
-                onClick={fieldObject.typeChangeHandler}
-            >Switch to {fieldObject.typeDisplay}
-            </Button>
+            {!fieldObject.sectionName.includes("Labor") && (
+                <Button
+                    variant="contained"
+                    onClick={fieldObject.typeChangeHandler}
+                >Switch to {fieldObject.typeDisplay}
+                </Button>
+            )}
+
             <Grid container spacing={2} columns={12} sx={{mt:2}}>
                 <Grid xs={3} sx={{borderBottom: "2px solid"}}>
                     <Item>
@@ -53,7 +57,7 @@ export default function InputSection({fieldObject})  {
                                 <Item>
                                     <Box>
                                         <Typography variant="h6" gutterBottom={true}>
-                                            N/A
+                                            {fieldObject.multiLabel1}
                                         </Typography>
                                     </Box>
                                 </Item>

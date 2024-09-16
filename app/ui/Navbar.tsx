@@ -10,7 +10,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
 import {Button} from "@mui/material";
 
-export default function MenuAppBar({userAuth, loginHandler, logoutHandler}) {
+export default function MenuAppBar({userAuth, loginHandler, logoutHandler, loadSessionHandler, saveSessionHandler}) {
     const [auth, setAuth] = React.useState(userAuth);
     const [anchorEl, setAnchorEl] = React.useState(null);
 
@@ -61,6 +61,12 @@ export default function MenuAppBar({userAuth, loginHandler, logoutHandler}) {
                                 onClose={handleClose}
                             >
 
+                                <MenuItem onClick={handleClose}>
+                                    <Button onClick={loadSessionHandler} variant="contained" >Load Session</Button>
+                                </MenuItem>
+                                <MenuItem onClick={handleClose}>
+                                    <Button onClick={saveSessionHandler} variant="contained" color='secondary'>Save Session</Button>
+                                </MenuItem>
                                 <MenuItem onClick={handleClose}>
                                     <Button onClick={logoutHandler} variant={'contained'} color={'error'}>Logout</Button>
                                 </MenuItem>

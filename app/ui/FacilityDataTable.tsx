@@ -46,6 +46,18 @@ export default function FacilityDataTable(props = defaultProps) {
             }));
 
             setRows(processedData);
+            const updatedJsonData = processedData.map(row => ({
+                Latitude: row.latitude,
+                Longitude: row.longitude,
+                Facility: row.facility,
+                District: row.district,
+                'MWH Patient Beds': row.patientBeds,
+                'Assigned MWH': row.assignedMwh,
+            }));
+
+            // Call props.setFacilityFileJson with the updated JSON data
+            console.log("Updating json with new mwh assignment.")
+            props.setFacilityFileJson(updatedJsonData);
             setInitialLoad(false); // Set initial load to false after processing
         } else {
             console.log("No file or not initial load.");
@@ -136,10 +148,9 @@ export default function FacilityDataTable(props = defaultProps) {
                             columns={columns}
                             initialState={{
                                 pagination: {
-                                    paginationModel: { page: 0, pageSize: 25 },
+                                    paginationModel: { page: 0, pageSize: 10 },
                                 },
                             }}
-                            pageSizeOptions={[10, 25, 50]}
                             checkboxSelection
                         />
                     </Box>

@@ -3,7 +3,6 @@ import Navbar from "@/app/ui/Navbar"
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Grid from '@mui/material/Unstable_Grid2';
-import {styled} from '@mui/material/styles';
 import {
     Alert,
     Container,
@@ -16,32 +15,21 @@ import {
     Typography
 } from "@mui/material";
 import FileHandlingButtons from "@/app/ui/FileHandlingButtons";
-import {black} from "next/dist/lib/picocolors";
 import * as React from "react";
 import InputSection from "@/app/ui/InputSection";
 import FacilityDataTable from "@/app/ui/FacilityDataTable";
 import MapComponent from "@/app/ui/MapComponent";
 import ZoneSelector from "@/app/ui/ZoneSelector";
 import * as XLSX from "xlsx";
-import {generateAssignmentMap, getGeoboundary, loadSessionurl, saveSessionUrl} from "@/app/lib/utils";
+import {generateAssignmentMap, getGeoboundary, loadSessionurl, saveSessionUrl, uploadFileToS3} from "@/app/lib/utils";
 import {jwtDecode} from "jwt-decode";
 import Backdrop from '@mui/material/Backdrop';
-import CircularProgress from '@mui/material/CircularProgress';
+import '@/app/lib/constants'
 import {DataGrid, GridColDef} from "@mui/x-data-grid";
+import {lmp_dir, multiparous_dir, nulliparous_dir} from "@/app/lib/constants";
+import HorizontalNonLinearStepper from "@/app/lib/HorizontalNonLinearStepper";
+import {CustomTextInput, Item} from "@/app/dashboard/customTextInput";
 
-export const CustomTextInput = ({value, onChange}) => {
-    const isError = value !== '' && (isNaN(value) || value < 1 || value > 100);
-    return <TextField sx={{width:'50%'}}size={'small'}
-                      value={value} onChange={onChange}
-                      error={isError}
-                      helperText={isError ? 'Enter a number between 1 and 100' : ''}
-    ></TextField>
-}
-export const Item = styled(Box)(({ theme }) => ({
-    textAlign: 'center',
-    color: black(),
-
-}));
 export default function Page() {
 
     const [travelSpeedType, setTravelSpeedType] = React.useState('single');
@@ -97,7 +85,7 @@ export default function Page() {
     const [zone3, setZone3] = React.useState('');
     const [zone3Selected, setZone3Selected] = React.useState('false')
     const [zone3Manual, setZone3Manual] = React.useState('');
-    const [numZonesSelector, setNumZonesSelector] = React.useState(1)
+    const [numZonesSelector, setNumZonesSelector] = React.useState('one')
     const [alertVisible, setAlertVisible] = React.useState(false);
     const [generateMapAlertText, setGenerateMapAlertText] = React.useState('This Alert displays the default close icon.');
     const [pregnancyValues, setPregnancyValues] = React.useState(null)
@@ -116,6 +104,12 @@ export default function Page() {
         { field: 'minPbba', headerName: 'Min PBBA', type: 'number', flex: 1, minWidth: 100, align: 'left', headerAlign: 'left' },
 
     ];
+    const [lmpS3Key, setLmpS3Key] = React.useState(null);
+    const [multiparousS3Key, setMultiparousS3Key] = React.useState(null);
+    const [nulliparousS3Key, setNulliparousS3Key] = React.useState(null);
+    const [activeStep, setActiveStep] = React.useState(1);
+    const [policyValue, setPolicyValue] = React.useState('egalitarian');
+
 
     const handleGenerateMapAlertClose = () => {
         setAlertVisible(false);
@@ -129,6 +123,11 @@ export default function Page() {
             setAlertVisible(false);
         }
     };
+    const handlePolicyChange = (event) => {
+        const policy = event.target.value
+        setPolicyValue(policy);
+    };
+
     const handleNumZonesSelector =(event) => {
         const numZones = event.target.value
         setNumZonesSelector(numZones)
@@ -225,25 +224,18 @@ export default function Page() {
         setBackdropText,
         setBackdropProgress,
         travelSpeedMotorizedUnmapped,
-        travelSpeedMotorizedMapped
-    }
-
-    const generateAssignmentMapObject = {
-        speed: travelSpeedType,
-        labor: laborType,
-        latent: latentPhaseType,
-        username: username,
-        tif_filename: totalDemandFileName,
-        table: facilityFileJson,
-        filehash: fileHash,
-        idToken: idToken,
-        setOptimisationEngineData: setOptimisationEngineData,
-        setBackdropOpen,
-        setBackdropText,
-        setBackdropProgress
+        travelSpeedMotorizedMapped,
+        latentPhaseFileMulti,
+        laborOnsetFileLMP
     }
 
 
+    const step1CheckObject = {
+        travelSpeedMotorizedUnmapped,
+        travelSpeedMotorizedMapped,
+        latentPhaseFileMulti,
+        laborOnsetFileLMP
+    }
 
     const zone1Object = {
         name: "Zone1",
@@ -272,6 +264,31 @@ export default function Page() {
         selected:zone3Selected
     }
 
+    const generateAssignmentMapObject = {
+        speed: travelSpeedType,
+        labor: laborType,
+        latent: latentPhaseType,
+        username: username,
+        tif_filename: totalDemandFileName,
+        table: facilityFileJson,
+        filehash: fileHash,
+        idToken: idToken,
+        nulli_file: latentPhaseFileNuli,
+        multi_file: latentPhaseFileMulti,
+        lmp_file: laborOnsetFileLMP,
+        objective: policyValue,
+        num_zones: numZonesSelector,
+        setOptimisationEngineData: setOptimisationEngineData,
+        setBackdropOpen,
+        setBackdropText,
+        setBackdropProgress,
+        zone1Object,
+        zone2Object,
+        zone3Object
+
+    }
+
+
     const facilityFileObject = {
         fileName: facilityFileName,
         fileHandler: handleFacilityUpload,
@@ -296,9 +313,9 @@ export default function Page() {
     const laborOnsetFileObjectLMP = {
         fileName: laborOnsetFileLMPName,
         fileHandler: handleLaborOnsetLMPUpload,
-        fileType: "Labor Onset LMP (.csv)",
+        fileType: "Labor Onset LMP (.xlsx)",
         fileClearHandler: handleLaborOnsetLMPClear,
-        website_sector: "lmp-labour"
+        website_sector: "lmp"
     }
 
     const laborOnsetFileObjectNoLMP = {
@@ -312,7 +329,7 @@ export default function Page() {
     const latentPhaseFileObjectNuli = {
         fileName: latentPhaseFileNuliName,
         fileHandler: handleLatentPhaseNuliUpload,
-        fileType: "Latent Phase Nulliparous (.csv)",
+        fileType: "Latent Phase Nulliparous (.xlsx)",
         fileClearHandler: handleLatentPhaseNuliClear,
         website_sector: "nulliparous",
     }
@@ -320,7 +337,7 @@ export default function Page() {
     const latentPhaseFileObjectMulti = {
         fileName: latentPhaseFileMultiName,
         fileHandler: handleLatentPhaseMultiUpload,
-        fileType: "Latent Phase Multiparous (.csv)",
+        fileType: "Latent Phase Multiparous (.xlsx)",
         fileClearHandler: handleLatentPhaseMultiClear,
         website_sector: "multiparous",
     }
@@ -370,10 +387,15 @@ export default function Page() {
         setGeofenceFileName(null)
     }
 
-    function handleLaborOnsetLMPUpload(event) {
+    async function handleLaborOnsetLMPUpload(event) {
         if (event.target.files[0] && event.target.files[0].name) {
             setLaborOnsetFileLMP(event.target.files[0])
             setLaborOnsetFileLMPName(event.target.files[0].name)
+            const s3Key = await uploadFileToS3(username, lmp_dir, event.target.files[0], event.target.files[0].name);
+            if (s3Key) {
+                console.log("File uploaded to S3 with key:", s3Key);
+                setLmpS3Key(s3Key);
+            }
         }
     }
     function handleLaborOnsetLMPClear() {
@@ -392,10 +414,15 @@ export default function Page() {
         setLaborOnsetFileNoLMPName(null)
     }
 
-    function handleLatentPhaseNuliUpload(event) {
+    async function handleLatentPhaseNuliUpload(event) {
         if (event.target.files[0] && event.target.files[0].name) {
             setLatentPhaseFileNuli(event.target.files[0])
             setLatentPhaseFileNuliName(event.target.files[0].name)
+            const s3Key = await uploadFileToS3(username, nulliparous_dir, event.target.files[0], event.target.files[0].name);
+            if (s3Key) {
+                console.log("File uploaded to S3 with key:", s3Key);
+                setNulliparousS3Key(s3Key);
+            }
         }
     }
     function handleLatentPhaseNuliClear() {
@@ -403,10 +430,15 @@ export default function Page() {
         setLatentPhaseFileNuliName(null)
     }
 
-    function handleLatentPhaseMultiUpload(event) {
+    async function handleLatentPhaseMultiUpload(event) {
         if (event.target.files[0] && event.target.files[0].name) {
             setLatentPhaseFileMulti(event.target.files[0])
             setLatentPhaseFileMultiName(event.target.files[0].name)
+            const s3Key = await uploadFileToS3(username, multiparous_dir, event.target.files[0], event.target.files[0].name);
+            if (s3Key) {
+                console.log("File uploaded to S3 with key:", s3Key);
+                setMultiparousS3Key(s3Key);
+            }
         }
     }
     function handleLatentPhaseMultiClear() {
@@ -542,9 +574,9 @@ export default function Page() {
         demandTypeChangeHandler: handleLaborDemandTypeChange,
         sectionName: "C. Labor Onset Uncertainty",
         multiLabel1: "LMP",
-        multiLabel2: "No LMP",
+        multiLabel2: "",
         fileObject_1: laborOnsetFileObjectLMP,
-        fileObject_2: laborOnsetFileObjectNoLMP
+        fileObject_2: null
     }
 
     const handleSaveSession = async () => {
@@ -834,352 +866,368 @@ export default function Page() {
                             sx={{ width: '50%', mt: 2 }}  // Adjust width and margin-top for spacing
                         />
                     </Backdrop>
-                    <Navbar userAuth={userAuth} logoutHandler={handleLogout}/>
-                    <Box display="flex" justifyContent="center" alignItems="center" sx={{mt:2}} > {/* Adjust height as needed */}
-                        <Button onClick={loadSession} variant="contained" sx={{mr:5}} >Load Session</Button>
-                        <Button onClick={handleSaveSession} variant="contained" color='secondary'>Save Session</Button>
-                    </Box>
-                    {/*Demand Data Input*/}
-                    <Box sx={{mt: 3}} id={'section1'}>
-                        <Typography variant="h5" gutterBottom={true}>
-                            I. Demand Data Input
-                        </Typography>
-                        <Grid container spacing={2} columns={16}>
-                            <Grid xs={8}>
-                                <Item>
-                                    <Box>
-                                        <FileHandlingButtons
-                                            fileObject={totalDemandFileObject}
-                                        />
-                                    </Box>
-                                </Item>
-                            </Grid>
-                            <Grid xs={8}>
-                                <Item>
-                                    <Box>
-                                        <FileHandlingButtons
-                                            fileObject={geofenceFileObject}
-                                        />
-                                    </Box>
-                                </Item>
-                            </Grid>
-                        </Grid>
-                        {/*Travel Speed*/}
-                        <Box sx={{px: 5, mt:3 }}>
+                    <Navbar userAuth={userAuth} logoutHandler={handleLogout} loadSessionHandler={loadSession} saveSessionHandler={handleSaveSession}/>
+                    <HorizontalNonLinearStepper mainPageActiveStepHandler={setActiveStep} step1CheckObject={step1CheckObject}/>
+
+                    {activeStep === 1 && (
+                        /*Demand Data Input*/
+                        <Box sx={{mt: 3, mb:5}} id={'section1'}>
+                            <Button>test hash</Button>
                             <Typography variant="h5" gutterBottom={true}>
-                                A. Travel Speed
+                                I. Demand Data Input
                             </Typography>
-                            <Button
-                                variant="contained"
-                                onClick={handleTravelSpeedTypeChange}
-                            >Switch to {travelSpeedTypeDisplay}
-                            </Button>
-                            <Grid container spacing={2} columns={12} sx={{mt:2}}>
-                                <Grid xs={3} sx={{borderBottom: "2px solid"}}>
+                            <Grid container spacing={2} columns={16}>
+                                <Grid xs={8}>
                                     <Item>
                                         <Box>
-                                            <Typography variant="h6" gutterBottom={true}>
-                                                Label
-                                            </Typography>
+                                            <FileHandlingButtons
+                                                fileObject={totalDemandFileObject}
+                                            />
                                         </Box>
                                     </Item>
                                 </Grid>
-                                <Grid xs={6} sx={{borderBottom: "2px solid"}}>
+                                <Grid xs={8}>
                                     <Item>
                                         <Box>
-                                            <Typography variant="h6" gutterBottom={true}>
-                                                Values
-                                            </Typography>
+                                            <FileHandlingButtons
+                                                fileObject={geofenceFileObject}
+                                            />
                                         </Box>
                                     </Item>
                                 </Grid>
-                                <Grid xs={3} sx={{borderBottom: "2px solid"}}>
-                                    <Item>
-                                        <Box>
-                                            <Typography variant="h6" gutterBottom={true}>
-                                                % Total Demand
-                                            </Typography>
-                                        </Box>
-                                    </Item>
-                                </Grid>
-
-                                {/*Single*/}
-                                {travelSpeedType=='single' && (
-                                    <Grid item xs={12}>
-                                        <Grid container spacing={2} columns={12}>
-                                            <Grid item xs={3}>
-                                                <Item>
-                                                    <Box>
-                                                        <Typography variant="h6" gutterBottom={true}>
-                                                            N/A
-                                                        </Typography>
-                                                    </Box>
-                                                </Item>
-                                            </Grid>
-                                            <Grid item xs={6}>
-                                                <Item>
-                                                    <Box>
-                                                        <Grid container spacing={2} columns={16}>
-                                                            <Grid item xs={8}>
-                                                                <Item>
-                                                                    <Box>
-                                                                        <Typography>Unmapped Ways Speed (km/h)</Typography>
-                                                                        <TextField size={'small'} id="outlined-basic" variant="outlined"
-                                                                                   value={travelSpeedMotorizedUnmapped || ''}
-                                                                                   onChange={handleInputChangeMotorizedUnmapped}
-                                                                        />
-                                                                    </Box>
-                                                                </Item>
-                                                            </Grid>
-                                                            <Grid item xs={8}>
-                                                                <Item>
-                                                                    <Box>
-                                                                        <Typography>Mapped Ways Speed (km/h)</Typography>
-                                                                        <TextField  size={'small'} id="outlined-basic" variant="outlined"
-                                                                                    value={travelSpeedMotorizedMapped || ''}
-                                                                                    onChange={handleInputChangeMotorizedMapped}
-                                                                        />
-                                                                    </Box>
-                                                                </Item>
-                                                            </Grid>
-                                                        </Grid>
-                                                    </Box>
-                                                </Item>
-                                            </Grid>
-                                            <Grid item xs={3}>
-                                                <Item>
-                                                    <Box>
-                                                        <Typography variant="h6" gutterBottom={true}>
-                                                            {travelSpeedMotorizedDemand}
-                                                        </Typography>
-                                                    </Box>
-                                                </Item>
-                                            </Grid>
-                                        </Grid>
-                                    </Grid>
-                                )}
-                                {/*Multiple*/}
-                                {travelSpeedType=='multiple' && (
-                                    <>
-                                        <Grid item xs={12}>
-                                            <Grid container spacing={2} columns={12}>
-                                                <Grid item xs={3}>
-                                                    <Item>
-                                                        <Box>
-                                                            <Typography variant="h6" gutterBottom={true}>
-                                                                Motorized
-                                                            </Typography>
-                                                        </Box>
-                                                    </Item>
-                                                </Grid>
-                                                <Grid item xs={6}>
-                                                    <Item>
-                                                        <Box>
-                                                            <Grid container spacing={2} columns={16}>
-                                                                <Grid item xs={8}>
-                                                                    <Item>
-                                                                        <Box>
-                                                                            <Typography>Unmapped Ways Speed (km/h)</Typography>
-                                                                            <TextField size={'small'} id="outlined-basic" variant="outlined" />
-                                                                        </Box>
-                                                                    </Item>
-                                                                </Grid>
-                                                                <Grid item xs={8}>
-                                                                    <Item>
-                                                                        <Box>
-                                                                            <Typography>Mapped Ways Speed (km/h)</Typography>
-                                                                            <TextField size={'small'} id="outlined-basic" variant="outlined" />
-                                                                        </Box>
-                                                                    </Item>
-                                                                </Grid>
-                                                            </Grid>
-                                                        </Box>
-                                                    </Item>
-                                                </Grid>
-                                                <Grid item xs={3}>
-                                                    {travelSpeedDemandType == 'manual' && (
-                                                        <Item>
-                                                            <Box sx={{mt:3, ml:2}} display="flex" justifyContent="left" alignItems="center" >
-                                                                <CustomTextInput
-                                                                    value={travelSpeedMotorizedDemand}
-                                                                    onChange={handleTravelSpeedDemandInputChange}
-                                                                />
-                                                                <Button onClick={handleTravelSpeedDemandTypeChange}>{travelSpeedDemandTypeDisplay}</Button>
-                                                            </Box>
-                                                        </Item>
-                                                    )}
-                                                    {travelSpeedDemandType == 'file' && (
-                                                        <Item>
-                                                            <Box sx={{mt:3, ml:2}} display="flex" justifyContent="left" alignItems="center" >
-                                                                <FileHandlingButtons/>
-                                                                <Button onClick={handleTravelSpeedDemandTypeChange}>{travelSpeedDemandTypeDisplay}</Button>
-                                                            </Box>
-                                                        </Item>
-                                                    )}
-                                                </Grid>
-                                            </Grid>
-                                        </Grid>
-                                        <Grid item xs={12}>
-                                            <Grid container spacing={2} columns={12}>
-                                                <Grid item xs={3}>
-                                                    <Item>
-                                                        <Box>
-                                                            <Typography variant="h6" gutterBottom={true}>
-                                                                Walking
-                                                            </Typography>
-                                                        </Box>
-                                                    </Item>
-                                                </Grid>
-                                                <Grid item xs={6}>
-                                                    <Item>
-                                                        <Box>
-                                                            <Grid container spacing={2} columns={16}>
-                                                                <Grid item xs={8}>
-                                                                    <Item>
-                                                                        <Box>
-                                                                            <Typography>Unmapped Ways Speed (km/h)</Typography>
-                                                                            <TextField size={'small'} id="outlined-basic" variant="outlined" />
-                                                                        </Box>
-                                                                    </Item>
-                                                                </Grid>
-                                                                <Grid item xs={8}>
-                                                                    <Item>
-                                                                        <Box>
-                                                                            <Typography>Mapped Ways Speed (km/h)</Typography>
-                                                                            <TextField size={'small'} id="outlined-basic" variant="outlined" />
-                                                                        </Box>
-                                                                    </Item>
-                                                                </Grid>
-                                                            </Grid>
-                                                        </Box>
-                                                    </Item>
-                                                </Grid>
-                                                <Grid item xs={3}>
-                                                    {travelSpeedDemandType=='manual' && (
-                                                        <Item>
-                                                            <Box sx={{mt:3, ml:2}} display="flex" justifyContent="left" alignItems="center" >
-                                                                <TextField InputProps={{
-                                                                    readOnly: true,
-                                                                }} sx={{width:'50%'}}size={'small'}
-                                                                           value={100-travelSpeedMotorizedDemand}></TextField>
-                                                            </Box>
-                                                        </Item>
-                                                    )}
-                                                </Grid>
-                                            </Grid>
-                                        </Grid>
-                                    </>
-                                )}
-
                             </Grid>
-                        </Box>
-                        <InputSection fieldObject={latentPhaseObject}/>
-                        <InputSection fieldObject={laborObject}/>
-                    </Box>
-                    {/*Facility Data Input*/}
-                    <Box sx={{mt:5}}>
-                        <Typography sx={{mb:3}} variant="h5" gutterBottom={true}>
-                            II. Facility Data Input
-                        </Typography>
-                        <FileHandlingButtons fileObject={facilityFileObject}/>
-                        {/*Table*/}
-                        <FacilityDataTable filename={facilityFileName} fileJson={facilityFileJson} setFacilityFileJson={setFacilityFileJson}/>
+                            {/*Travel Speed*/}
+                            <Box sx={{px: 5, mt:3 }}>
+                                <Typography variant="h5" gutterBottom={true}>
+                                    A. Travel Speed
+                                </Typography>
+                                <Button
+                                    variant="contained"
+                                    onClick={handleTravelSpeedTypeChange}
+                                >Switch to {travelSpeedTypeDisplay}
+                                </Button>
+                                <Grid container spacing={2} columns={12} sx={{mt:2}}>
+                                    <Grid xs={3} sx={{borderBottom: "2px solid"}}>
+                                        <Item>
+                                            <Box>
+                                                <Typography variant="h6" gutterBottom={true}>
+                                                    Label
+                                                </Typography>
+                                            </Box>
+                                        </Item>
+                                    </Grid>
+                                    <Grid xs={6} sx={{borderBottom: "2px solid"}}>
+                                        <Item>
+                                            <Box>
+                                                <Typography variant="h6" gutterBottom={true}>
+                                                    Values
+                                                </Typography>
+                                            </Box>
+                                        </Item>
+                                    </Grid>
+                                    <Grid xs={3} sx={{borderBottom: "2px solid"}}>
+                                        <Item>
+                                            <Box>
+                                                <Typography variant="h6" gutterBottom={true}>
+                                                    % Total Demand
+                                                </Typography>
+                                            </Box>
+                                        </Item>
+                                    </Grid>
 
-                        <Box sx={{mt:5}}>
-                            <Button
-                                onClick={() => {getGeoboundary(generateMapObject)}}
-                                variant={'contained'} color={'success'}>Generate Map</Button>
-                            {alertVisible && (
-                                <Alert
-                                    sx={{ mt: 2 }}
-                                    severity="warning"
-                                    onClose={handleGenerateMapAlertClose}
+                                    {/*Single*/}
+                                    {travelSpeedType=='single' && (
+                                        <Grid item xs={12}>
+                                            <Grid container spacing={2} columns={12}>
+                                                <Grid item xs={3}>
+                                                    <Item>
+                                                        <Box>
+                                                            <Typography variant="h6" gutterBottom={true}>
+                                                                N/A
+                                                            </Typography>
+                                                        </Box>
+                                                    </Item>
+                                                </Grid>
+                                                <Grid item xs={6}>
+                                                    <Item>
+                                                        <Box>
+                                                            <Grid container spacing={2} columns={16}>
+                                                                <Grid item xs={8}>
+                                                                    <Item>
+                                                                        <Box>
+                                                                            <Typography>Unmapped Ways Speed (km/h)</Typography>
+                                                                            <TextField size={'small'} id="outlined-basic" variant="outlined"
+                                                                                       value={travelSpeedMotorizedUnmapped || ''}
+                                                                                       onChange={handleInputChangeMotorizedUnmapped}
+                                                                            />
+                                                                        </Box>
+                                                                    </Item>
+                                                                </Grid>
+                                                                <Grid item xs={8}>
+                                                                    <Item>
+                                                                        <Box>
+                                                                            <Typography>Mapped Ways Speed (km/h)</Typography>
+                                                                            <TextField  size={'small'} id="outlined-basic" variant="outlined"
+                                                                                        value={travelSpeedMotorizedMapped || ''}
+                                                                                        onChange={handleInputChangeMotorizedMapped}
+                                                                            />
+                                                                        </Box>
+                                                                    </Item>
+                                                                </Grid>
+                                                            </Grid>
+                                                        </Box>
+                                                    </Item>
+                                                </Grid>
+                                                <Grid item xs={3}>
+                                                    <Item>
+                                                        <Box>
+                                                            <Typography variant="h6" gutterBottom={true}>
+                                                                {travelSpeedMotorizedDemand}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Item>
+                                                </Grid>
+                                            </Grid>
+                                        </Grid>
+                                    )}
+                                    {/*Multiple*/}
+                                    {travelSpeedType=='multiple' && (
+                                        <>
+                                            <Grid item xs={12}>
+                                                <Grid container spacing={2} columns={12}>
+                                                    <Grid item xs={3}>
+                                                        <Item>
+                                                            <Box>
+                                                                <Typography variant="h6" gutterBottom={true}>
+                                                                    Motorized
+                                                                </Typography>
+                                                            </Box>
+                                                        </Item>
+                                                    </Grid>
+                                                    <Grid item xs={6}>
+                                                        <Item>
+                                                            <Box>
+                                                                <Grid container spacing={2} columns={16}>
+                                                                    <Grid item xs={8}>
+                                                                        <Item>
+                                                                            <Box>
+                                                                                <Typography>Unmapped Ways Speed (km/h)</Typography>
+                                                                                <TextField size={'small'} id="outlined-basic" variant="outlined" />
+                                                                            </Box>
+                                                                        </Item>
+                                                                    </Grid>
+                                                                    <Grid item xs={8}>
+                                                                        <Item>
+                                                                            <Box>
+                                                                                <Typography>Mapped Ways Speed (km/h)</Typography>
+                                                                                <TextField size={'small'} id="outlined-basic" variant="outlined" />
+                                                                            </Box>
+                                                                        </Item>
+                                                                    </Grid>
+                                                                </Grid>
+                                                            </Box>
+                                                        </Item>
+                                                    </Grid>
+                                                    <Grid item xs={3}>
+                                                        {travelSpeedDemandType == 'manual' && (
+                                                            <Item>
+                                                                <Box sx={{mt:3, ml:2}} display="flex" justifyContent="left" alignItems="center" >
+                                                                    <CustomTextInput
+                                                                        value={travelSpeedMotorizedDemand}
+                                                                        onChange={handleTravelSpeedDemandInputChange}
+                                                                    />
+                                                                    <Button onClick={handleTravelSpeedDemandTypeChange}>{travelSpeedDemandTypeDisplay}</Button>
+                                                                </Box>
+                                                            </Item>
+                                                        )}
+                                                        {travelSpeedDemandType == 'file' && (
+                                                            <Item>
+                                                                <Box sx={{mt:3, ml:2}} display="flex" justifyContent="left" alignItems="center" >
+                                                                    <FileHandlingButtons/>
+                                                                    <Button onClick={handleTravelSpeedDemandTypeChange}>{travelSpeedDemandTypeDisplay}</Button>
+                                                                </Box>
+                                                            </Item>
+                                                        )}
+                                                    </Grid>
+                                                </Grid>
+                                            </Grid>
+                                            <Grid item xs={12}>
+                                                <Grid container spacing={2} columns={12}>
+                                                    <Grid item xs={3}>
+                                                        <Item>
+                                                            <Box>
+                                                                <Typography variant="h6" gutterBottom={true}>
+                                                                    Walking
+                                                                </Typography>
+                                                            </Box>
+                                                        </Item>
+                                                    </Grid>
+                                                    <Grid item xs={6}>
+                                                        <Item>
+                                                            <Box>
+                                                                <Grid container spacing={2} columns={16}>
+                                                                    <Grid item xs={8}>
+                                                                        <Item>
+                                                                            <Box>
+                                                                                <Typography>Unmapped Ways Speed (km/h)</Typography>
+                                                                                <TextField size={'small'} id="outlined-basic" variant="outlined" />
+                                                                            </Box>
+                                                                        </Item>
+                                                                    </Grid>
+                                                                    <Grid item xs={8}>
+                                                                        <Item>
+                                                                            <Box>
+                                                                                <Typography>Mapped Ways Speed (km/h)</Typography>
+                                                                                <TextField size={'small'} id="outlined-basic" variant="outlined" />
+                                                                            </Box>
+                                                                        </Item>
+                                                                    </Grid>
+                                                                </Grid>
+                                                            </Box>
+                                                        </Item>
+                                                    </Grid>
+                                                    <Grid item xs={3}>
+                                                        {travelSpeedDemandType=='manual' && (
+                                                            <Item>
+                                                                <Box sx={{mt:3, ml:2}} display="flex" justifyContent="left" alignItems="center" >
+                                                                    <TextField InputProps={{
+                                                                        readOnly: true,
+                                                                    }} sx={{width:'50%'}}size={'small'}
+                                                                               value={100-travelSpeedMotorizedDemand}></TextField>
+                                                                </Box>
+                                                            </Item>
+                                                        )}
+                                                    </Grid>
+                                                </Grid>
+                                            </Grid>
+                                        </>
+                                    )}
+
+                                </Grid>
+                            </Box>
+                            <InputSection fieldObject={latentPhaseObject}/>
+                            <InputSection fieldObject={laborObject}/>
+                        </Box>
+                    )}
+                    {activeStep === 2 && (
+                        /*Facility Data Input*/
+                        <Box sx={{mt:5, mb: 5}}>
+                            <Typography sx={{mb:3}} variant="h5" gutterBottom={true}>
+                                II. Facility Data Input
+                            </Typography>
+                            <FileHandlingButtons fileObject={facilityFileObject}/>
+                            {/*Table*/}
+                            <FacilityDataTable filename={facilityFileName} fileJson={facilityFileJson} setFacilityFileJson={setFacilityFileJson}/>
+
+                            <Box sx={{mt:5}}>
+
+                            </Box>
+                        </Box>
+                    )}
+                    {activeStep === 3 && (
+                        /*Policy Definition*/
+                        <Box sx={{mt:5, mb:5}}>
+                            <Typography variant="h5" gutterBottom={true} sx={{mb:3}}>
+                                III - Policy Definition
+                            </Typography>
+                            <Box sx={{mb:3}}>
+                                <FormLabel id="objective_label">Policy Objective</FormLabel>
+                                <RadioGroup
+                                    row
+                                    aria-labelledby="demo-row-radio-buttons-group-label"
+                                    name="row-radio-buttons-group"
+                                    value={policyValue}
+                                    onChange={handlePolicyChange}
                                 >
-                                    {generateMapAlertText}
-                                </Alert>
+                                    <FormControlLabel value="egalitarian" control={<Radio />} label="Egalitarian" />
+                                    <FormControlLabel value="utilitarian" control={<Radio />} label="Utilitarian" />
+                                </RadioGroup>
+                            </Box>
+                            <Box sx={{mb:3}}>
+                                <FormLabel id="num_zones_label">Number of Zones</FormLabel>
+                                <RadioGroup
+                                    row
+                                    aria-labelledby="demo-row-radio-buttons-group-label"
+                                    name="row-radio-buttons-group"
+                                    value={numZonesSelector}
+                                    onChange={handleNumZonesSelector
+                                    }
+                                >
+                                    <FormControlLabel value="one" control={<Radio />} label="1" />
+                                    <FormControlLabel value="two" control={<Radio />} label="2" />
+                                    <FormControlLabel value="three" control={<Radio />} label="3" />
+                                    <FormControlLabel value="infinite" control={<Radio />} label="∞" />
+                                </RadioGroup>
+                            </Box>
+                            <Box sx={{mb:3}}>
+                                <FormLabel id="move_after_date_label">Allow recommended MWH move after expected due date?</FormLabel>
+                                <RadioGroup
+                                    row
+                                    aria-labelledby="demo-row-radio-buttons-group-label"
+                                    name="row-radio-buttons-group"
+                                >
+                                    <FormControlLabel value="yes" control={<Radio />} label="Yes" />
+                                    <FormControlLabel value="no" control={<Radio />} label="No" />
+                                </RadioGroup>
+                            </Box>
+                            <Box>
+                                <ZoneSelector zoneObject={zone1Object}/>
+                                <ZoneSelector zoneObject={zone2Object}/>
+                                <ZoneSelector zoneObject={zone3Object}/>
+                            </Box>
+
+
+
+                        </Box>
+                    )}
+                    {activeStep === 4 && (
+                        /*Assignment Map*/
+                        <Box sx={{mt:5, mb:5}}>
+                            {assignmentMapRows && (
+                                <DataGrid
+                                    rows={assignmentMapRows}
+                                    columns={assignmentMapCols}
+                                    initialState={{
+                                        pagination: {
+                                            paginationModel: { page: 0, pageSize: 10 },
+                                        },
+                                    }}
+                                    pageSizeOptions={[10]}
+                                    checkboxSelection = {false}
+                                />
                             )}
-                        </Box>
-                    </Box>
-                    {/*Policy Definition*/}
-                    <Box sx={{mt:5}}>
-                        <Typography variant="h5" gutterBottom={true} sx={{mb:3}}>
-                            III - Policy Definition
-                        </Typography>
-                        <Box sx={{mb:3}}>
-                            <FormLabel id="objective_label">Policy Objective</FormLabel>
-                            <RadioGroup
-                                row
-                                aria-labelledby="demo-row-radio-buttons-group-label"
-                                name="row-radio-buttons-group"
-                            >
-                                <FormControlLabel value="egalitarian" control={<Radio />} label="Egalitarian" />
-                                <FormControlLabel value="utilitarian" control={<Radio />} label="Utilitarian" />
-                            </RadioGroup>
-                        </Box>
-                        <Box sx={{mb:3}}>
-                            <FormLabel id="num_zones_label">Number of Zones</FormLabel>
-                            <RadioGroup
-                                row
-                                aria-labelledby="demo-row-radio-buttons-group-label"
-                                name="row-radio-buttons-group"
-                                value={numZonesSelector}
-                                onChange={handleNumZonesSelector
-                                }
-                            >
-                                <FormControlLabel value="one" control={<Radio />} label="1" />
-                                <FormControlLabel value="two" control={<Radio />} label="2" />
-                                <FormControlLabel value="three" control={<Radio />} label="3" />
-                                <FormControlLabel value="infinite" control={<Radio />} label="∞" />
-                            </RadioGroup>
-                        </Box>
-                        <Box sx={{mb:3}}>
-                            <FormLabel id="move_after_date_label">Allow recommended MWH move after expected due date?</FormLabel>
-                            <RadioGroup
-                                row
-                                aria-labelledby="demo-row-radio-buttons-group-label"
-                                name="row-radio-buttons-group"
-                            >
-                                <FormControlLabel value="yes" control={<Radio />} label="Yes" />
-                                <FormControlLabel value="no" control={<Radio />} label="No" />
-                            </RadioGroup>
-                        </Box>
-                        <Box>
-                            <ZoneSelector zoneObject={zone1Object}/>
-                            <ZoneSelector zoneObject={zone2Object}/>
-                            <ZoneSelector zoneObject={zone3Object}/>
-                        </Box>
 
-                        <Button variant="contained"
-                            sx = {{'mt': 3}}
-                                onClick={() => generateAssignmentMap(generateAssignmentMapObject)}
-                        >
-                            Generate Assignment Map</Button>
-                    </Box>
-                    {/*Assignment Map*/}
-                    <Box sx={{mt:5}}>
-                        {assignmentMapRows && (
-                            <DataGrid
-                                rows={assignmentMapRows}
-                                columns={assignmentMapCols}
-                                initialState={{
-                                    pagination: {
-                                        paginationModel: { page: 0, pageSize: 25 },
-                                    },
-                                }}
-                                pageSizeOptions={[10, 25, 50]}
-                                checkboxSelection
+                            <Typography variant="h5" gutterBottom={true}>
+                                V - MWH Assignment Map
+                            </Typography>
+                            <MapComponent facilityFileJson = {facilityFileJson} geoboundaryData={geoboundaryObject.pregnancyValues} costAndOptimizationData={costAndOptimizationData}
+                                          optimizationEngineData = {optimisationEngineData}
+                                          setAssignmentMapRows = {setAssignmentMapRows}
+                                          backdropObject={backdropObject}
                             />
-                        )}
+                            <Box sx={{mt:5, mb:3}}>
+                                <Button
+                                    onClick={() => {getGeoboundary(generateMapObject)}}
+                                    variant={'contained'} color={'success'}>Generate Map</Button>
+                                {alertVisible && (
+                                    <Alert
+                                        sx={{ mt: 2 }}
+                                        severity="warning"
+                                        onClose={handleGenerateMapAlertClose}
+                                    >
+                                        {generateMapAlertText}
+                                    </Alert>
+                                )}
+                            </Box>
+                            <Button variant="contained"
+                                    sx = {{'mt': 3}}
+                                    onClick={() => generateAssignmentMap(generateAssignmentMapObject)}
+                            >
+                                Generate Assignment Map
+                            </Button>
+                        </Box>
+                    )}
 
-                        <Typography variant="h5" gutterBottom={true}>
-                            V - MWH Assignment Map
-                        </Typography>
-                        <MapComponent facilityFileJson = {facilityFileJson} geoboundaryData={geoboundaryObject.pregnancyValues} costAndOptimizationData={costAndOptimizationData}
-                                      optimizationEngineData = {optimisationEngineData}
-                                      setAssignmentMapRows = {setAssignmentMapRows}
-                                      backdropObject={backdropObject}
-                        />
-                    </Box>
                 </Box>
             )}
             {userAuth == 'false' && (
