@@ -1,6 +1,6 @@
 import axios from "axios";
 import crypto from 'crypto-js';
-import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {S3Client, ListObjectsV2Command, HeadObjectCommand, GetObjectCommand} from "@aws-sdk/client-s3";
 import {fromCognitoIdentityPool} from "@aws-sdk/credential-providers";
 
 export const formatCurrency = (amount) => {
@@ -87,35 +87,82 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
     }
 
     let num_zones_int = mapNumZones(generateAssignmentMapObject.num_zones)
-    const s3Key = parsedBody.s3_key;
-    const file_count = parsedBody.file_count
-    let opti_payload = {
-      s3_key: s3Key,
-      username: generateAssignmentMapObject.username,
-      hash: generateAssignmentMapObject.filehash,
-      excel_key: empirical_data_s3_key,
+
+    let policyData = {
       objective: generateAssignmentMapObject.objective,
       num_zones: num_zones_int,
       zones: getZoneObjects(generateAssignmentMapObject.zone1Object, generateAssignmentMapObject.zone2Object,
           generateAssignmentMapObject.zone3Object, num_zones_int),
     }
 
-    generateAssignmentMapObject.setBackdropText("Step 3/3: Making call to optimization engine..")
-    generateAssignmentMapObject.setBackdropProgress(50)
-    console.log("Making request to optimisation engine.")
-    const opti_response = await fetch(optimisation_engine_url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(opti_payload),
-    })
+    let empiricalData = {
+      multi: generateAssignmentMapObject.multi_file,
+      nulli: generateAssignmentMapObject.nulli_file,
+      gestation: generateAssignmentMapObject.lmp_file
+    }
 
-    if (opti_response.ok) {
+    const s3Key = parsedBody.s3_key;
+    const file_count = parsedBody.file_count;
+    const extractedHash = extractFileHash(s3Key)
+
+    if (!extractedHash || (extractedHash !== generateAssignmentMapObject.filehash)) {
+      console.error("Hash mismatch.", extractedHash, generateAssignmentMapObject.filehash)
+      generateAssignmentMapObject.setBackdropText("")
+      generateAssignmentMapObject.setBackdropOpen(false);
+      generateAssignmentMapObject.setBackdropProgress(0);
+      return;
+    }
+
+    const newHashString = extractedHash + JSON.stringify(empiricalData) + JSON.stringify(policyData);
+    const newHash = crypto.MD5(newHashString).toString();
+    console.debug("Generated second hash: ", newHash)
+    const dirForCheck = generateAssignmentMapObject.username + "/optimization-engine-results/" + newHash + "/"
+    const checkOptiExists = await checkS3DirectoryExists('user-facility-files', dirForCheck, file_count);
+
+    if (!checkOptiExists) {
+      // hashed file doesnt exist, generate it
+      let opti_payload = {
+        s3_key: s3Key,
+        username: generateAssignmentMapObject.username,
+        hash: newHash,
+        excel_key: empirical_data_s3_key,
+        objective: generateAssignmentMapObject.objective,
+        num_zones: num_zones_int,
+        zones: getZoneObjects(generateAssignmentMapObject.zone1Object, generateAssignmentMapObject.zone2Object,
+            generateAssignmentMapObject.zone3Object, num_zones_int),
+      }
+
+      generateAssignmentMapObject.setBackdropText("Step 3/3: Making call to optimization engine..")
+      generateAssignmentMapObject.setBackdropProgress(50)
+      console.debug("Making request to optimisation engine.")
+      const opti_response = await fetch(optimisation_engine_url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(opti_payload),
+      })
+
+      if (opti_response.ok) {
+        generateAssignmentMapObject.setBackdropProgress(80);
+        console.debug("Optimisation response: ", opti_response)
+        const responseBody = await opti_response.json();
+        try {
+          const results = await pollForOptimizationFiles(responseBody.s3_output_dir, file_count)
+          console.debug("Polling done:", results)
+          generateAssignmentMapObject.setOptimisationEngineData(results);
+          generateAssignmentMapObject.setBackdropProgress(90);
+        } catch (e) {
+          console.error("An error occurred when polling for results.", e)
+          generateAssignmentMapObject.setBackdropText("")
+          generateAssignmentMapObject.setBackdropOpen(false);
+          generateAssignmentMapObject.setBackdropProgress(0);
+        }
+      }
+    } else {
+      // output dir exists,  no need to call optimization engine
       generateAssignmentMapObject.setBackdropProgress(80);
-      console.log("Optimisation response: ", opti_response)
-      const responseBody = await opti_response.json();
       try {
-        const results = await pollForOptimizationFiles(responseBody, file_count)
-        console.log("Polling done:", results)
+        const results = await pollForOptimizationFiles(dirForCheck, file_count)
+        console.debug("Polling done:", results)
         generateAssignmentMapObject.setOptimisationEngineData(results);
         generateAssignmentMapObject.setBackdropProgress(90);
       } catch (e) {
@@ -196,13 +243,21 @@ export const getGeoboundary = async (generateMapObject) => {
       generateMapObject.geoboundaryObject.handler(result)
       generateMapObject.setBackdropProgress(20);
 
+      let speedData = {
+        motorized_mapped: generateMapObject.travelSpeedMotorizedMapped,
+        motorized_unmapped: generateMapObject.travelSpeedMotorizedUnmapped,
+        walking_mapped: generateMapObject.travelSpeedWalkingMapped,
+        walking_unmapped: generateMapObject.travelSpeedWalkingUnmapped
+      }
+
       if (result && generateMapObject.facilityFileJson) {
-        const { s3Url, filename } = await uploadToS3(generateMapObject.facilityFileJson, result, generateMapObject.username);
+        const { s3Url, filename } = await uploadToS3(generateMapObject.facilityFileJson, result, generateMapObject.username,
+            speedData);
         if (s3Url) {
           generateMapObject.setBackdropProgress(25);
           generateMapObject.setBackdropText("Step 2/2: Generating cost matrix data...")
 
-          const backendResults = await requestToBackend(s3Url, generateMapObject.username, generateMapObject.travelSpeedMotorizedUnmapped, generateMapObject.travelSpeedMotorizedMapped, generateMapObject.setBackdropProgress); //TODO: change hardcoded
+          const backendResults = await requestToBackend(filename, s3Url, generateMapObject.username, generateMapObject.travelSpeedMotorizedUnmapped, generateMapObject.travelSpeedMotorizedMapped, generateMapObject.setBackdropProgress); //TODO: change hardcoded
           if (backendResults) {
             //TODO: if travel speed is multiple, there will be 2 cost and optimization layers
             console.log('Backend processing completed successfully:', backendResults);
@@ -263,7 +318,7 @@ const readFileAsBase64 = (file) => {
   });
 };
 
-const uploadToS3 = async (facilitiesData, mapData, username) => {
+const uploadToS3 = async (facilitiesData, mapData, username, speedData) => {
   try {
     // Step 1: Prepare the data dictionary
     const dataDict = {
@@ -271,8 +326,9 @@ const uploadToS3 = async (facilitiesData, mapData, username) => {
       map_data: mapData,
       username: username,
     };
-    const filename = generateCombinedFileHash(facilitiesData,mapData);
-    const s3Key = `${username}/cost-matrix-inputs/demand-data-and-facilities-${filename}.json`;
+    const hashInitial = generateCombinedFileHash(facilitiesData,mapData, speedData);
+    console.log("Generated initial hash: ", hashInitial)
+    const s3Key = `${username}/cost-matrix-inputs/demand-data-and-facilities-${hashInitial}.json`;
     const presignedUrlServiceUrl = `https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get-presigned-url?filename=${s3Key}`;
     const dataJson = JSON.stringify(dataDict);
     const uploadResult = await sendFileToS3(dataJson, s3Key, presignedUrlServiceUrl, true);
@@ -283,7 +339,7 @@ const uploadToS3 = async (facilitiesData, mapData, username) => {
     // Step 6: Construct the S3 URL and return it
     const bucketName = 'user-facility-files';
     const s3Url = `https://${bucketName}.s3.amazonaws.com/${s3Key}`;
-    return { s3Url, filename };
+    return { s3Url, filename: hashInitial };
 
   } catch (error) {
     console.error('Error uploading to S3:', error);
@@ -293,17 +349,25 @@ const uploadToS3 = async (facilitiesData, mapData, username) => {
 
 
 
-const generateCombinedFileHash = (file1Content, file2Content) => {
+const generateCombinedFileHash = (facilityData, mapData, speedData, empiricalData, policyData) => {
+
+
   // Convert the content objects to JSON strings with sorted keys
-  const jsonStr1 = JSON.stringify(file1Content, Object.keys(file1Content).sort());
-  const jsonStr2 = JSON.stringify(file2Content, Object.keys(file2Content).sort());
+  const facilityJson = JSON.stringify(facilityData);
+  const mapJson = JSON.stringify(mapData);
+  const speedJson = JSON.stringify(speedData);
 
   // Concatenate the JSON strings
-  const combinedStr = jsonStr1 + jsonStr2;
+  const hashInitial = crypto.MD5(facilityJson + mapJson + speedJson);
 
-  // Generate the MD5 hash of the combined string
-  return crypto.MD5(combinedStr).toString();
+  return hashInitial.toString()
 };
+
+function extractFileHash(s3Key) {
+  const match = s3Key.match(/optimization-engine-input-([a-f0-9]{32})\.zip$/);
+  return match ? match[1] : null;
+}
+
 
 const mapNumZones = (numZones) => {
   let numZonesInt;
@@ -392,12 +456,13 @@ const sendFileToS3 = async (fileContent, fileName, presignedUrlServiceUrl, needE
   }
 };
 
-const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , setBackdropProgress) => {
+const requestToBackend = async (hash, s3Url, username, unmappedSpeed, mappedSpeed , setBackdropProgress) => {
   try {
+
     // Prepare the payload for Distance to Road
     const payload = {
       file_url: s3Url,
-      unmapped_speed: unmappedSpeed, //TODO: pass both unmapped values in an object (send -1 if single)
+      unmapped_speed: unmappedSpeed, //TODO: pass both unmapped values in an object (send -1 if single) {}
     };
 
     // Extract bucket name and file paths from S3 URL
@@ -413,13 +478,16 @@ const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , se
     // Construct the correct key
 
     setBackdropProgress(30);
-
-    // Send the payload to the first Lambda endpoint TODO: either fix response or dont use await
-    const response = await fetch(lambdaEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const distance_to_road_exists = await checkS3FileExists(bucketName, `${baseKeyPath}/distance_to_road_${filehash}.zip`)
+    if (!distance_to_road_exists) {
+      console.log("Distance to road doesnt exist for hash ", filehash);
+      // Send the payload to the first Lambda endpoint TODO: either fix response or dont use await
+      const response = fetch(lambdaEndpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+    }
 
     // Poll for the "distance to road" result
     const distanceToRoadKey = `${baseKeyPath}/distance_to_road_${filehash}.zip`;
@@ -440,16 +508,20 @@ const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , se
     // Prepare the payload for Cost Matrix
     const payloadCostMatrix = {
       file_url: parsedPath,
-      mapped_speed: mappedSpeed, //TODO: send both mapped speeds in an object (-1 if single)
+      mapped_speed: mappedSpeed, //TODO: send both mapped speeds in an object (-1 if single) {motorized:5, walking: -1}
     };
 
-    // Send the payload to the Cost Matrix Lambda endpoint
-    const responseCostMatrix = await fetch(costMatrixLambdaEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payloadCostMatrix),
-    });
+    const cost_matrix_exists = await checkS3FileExists(bucketName, `${baseKeyPath}/cost_matrix_${filehash}.zip`)
+    if (!cost_matrix_exists) {
+      console.log("Cost matrix doesnt exist for hash ", filehash);
 
+      // Send the payload to the Cost Matrix Lambda endpoint
+      const responseCostMatrix = fetch(costMatrixLambdaEndpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payloadCostMatrix),
+      });
+    }
 
     // Poll for the Cost Matrix results
     const costMatrixKey = `${baseKeyPath}/cost_matrix_${filehash}.zip`;
@@ -473,17 +545,21 @@ const requestToBackend = async (s3Url, username, unmappedSpeed, mappedSpeed , se
       };
 
       try {
-        // Make the fetch request without awaiting the response
-        const cost_response = await fetch(costAndOptimizationEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payloadCostAndOptimization),
-        })
+        const costAndOptiExists = await checkS3FileExists(bucketName, `${username}/cost-and-optimization-results/cost-and-optimization-${filehash}.zip`)
+        if (!costAndOptiExists) {
+          console.log("Cost and Optimization doesnt exist for hash ", filehash);
+          // Make the fetch request without awaiting the response
+          const cost_response = await fetch(costAndOptimizationEndpoint, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payloadCostAndOptimization),
+          })
 
-        if (!cost_response.ok) {
-          // there was an issue with the cost matrix call
-          console.log("Issue with cost matrix server.")
-        return null;
+          if (!cost_response.ok) {
+            // there was an issue with the cost matrix call
+            console.log("Issue with cost matrix server.")
+            return null;
+          }
         }
 
         setBackdropProgress(90);
@@ -556,16 +632,13 @@ const pollS3ForFile = async (s3Key, bucketName, maxRetries = 20, retryInterval =
   return null;
 };
 
-async function pollForOptimizationFiles(responseBody, fileCount) {
+async function pollForOptimizationFiles(s3OutputDir, fileCount) {
   const waitTime = 5000; // 5 seconds in milliseconds
   const maxAttempts = 100;
-  const s3OutputDir = responseBody.s3_output_dir;
   const s3OutputUri = `s3://user-facility-files/${s3OutputDir}`;
   const parsedUrl = new URL(s3OutputUri.replace("s3://", "https://"));
   const bucketName = parsedUrl.hostname;
   const prefix = parsedUrl.pathname.slice(1); // Remove leading '/'
-  console.log(s3OutputDir)
-  console.log(bucketName)
 
   // Initialize S3 client
   const s3Client = new S3Client({
@@ -697,6 +770,7 @@ import {styled} from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import {black} from "next/dist/lib/picocolors";
 import * as React from "react";
+import assert from "node:assert";
 
 export async function combineXlsxFiles(laborOnsetFileLMP, latentPhaseFileNuli, latentPhaseFileMulti, username, uploadDir) {
   // Create a new workbook
@@ -753,6 +827,85 @@ export async function combineXlsxFiles(laborOnsetFileLMP, latentPhaseFileNuli, l
   }
 
 }
+
+async function checkS3FileExists(bucket, key) {
+  const client = new S3Client({
+    region: "eu-west-2", // Replace with your region
+    credentials: fromCognitoIdentityPool({
+      clientConfig: { region: "eu-west-2" }, // Replace with your region
+      identityPoolId: "eu-west-2:f891c50a-12ec-47dd-820e-7f7d224309ad", // Replace with your Identity Pool ID
+    }),
+  });
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+  });
+
+  try {
+    const response = await client.send(command);
+    return true;
+  } catch (error) {
+    if (error.name === 'NoSuchKey') {
+      return false;
+    }
+    // Log the error for debugging
+    console.error("Error checking S3 file:", error);
+    // Re-throw the error
+    throw error;
+  }
+}
+
+async function checkS3DirectoryExists(bucket, prefix, expectedFileCount = null) {
+  const client = new S3Client({
+    region: "eu-west-2", // Replace with your region
+    credentials: fromCognitoIdentityPool({
+      clientConfig: { region: "eu-west-2" }, // Replace with your region
+      identityPoolId: "eu-west-2:f891c50a-12ec-47dd-820e-7f7d224309ad", // Replace with your Identity Pool ID
+    }),
+  });
+  const command = new ListObjectsV2Command({
+    Bucket: bucket,
+    Prefix: prefix.endsWith('/') ? prefix : `${prefix}/`
+  });
+
+  try {
+    let totalFiles = 0;
+    let isTruncated = true;
+    let continuationToken = undefined;
+
+    while (isTruncated) {
+      const response = await client.send(command);
+
+      if (response.Contents) {
+        totalFiles += response.Contents.length;
+      }
+
+      // If we've already exceeded the expected count, we can stop
+      if (expectedFileCount !== null && totalFiles > expectedFileCount) {
+        console.log("Wrong number of files found.", totalFiles)
+        return false;
+      }
+
+      isTruncated = response.IsTruncated;
+      continuationToken = response.NextContinuationToken;
+
+      if (isTruncated) {
+        command.input.ContinuationToken = continuationToken;
+      }
+    }
+
+    if (expectedFileCount === null) {
+      return totalFiles > 0;
+    } else {
+      console.debug("Expected "+ expectedFileCount + ", Actual: " + totalFiles)
+      return totalFiles === expectedFileCount;
+    }
+  } catch (error) {
+    console.error("Error checking S3 directory:", error);
+    return false;
+  }
+}
+
 
 // Helper function to convert binary string to an ArrayBuffer
 function s2ab(s) {

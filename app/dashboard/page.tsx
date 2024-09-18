@@ -95,6 +95,7 @@ export default function Page() {
     const [costMatrixData, setCostMatrixData] = React.useState(null);
     const [costAndOptimizationData, setCostAndOptimizationData] = React.useState(null);
     const [fileHash, setFileHash] = React.useState()
+    const [fileHashTotal, setFileHashTotal] = React.useState()
     const [optimisationEngineData, setOptimisationEngineData] = React.useState(null);
     const [assignmentMapRows, setAssignmentMapRows] = React.useState(null);
     const assignmentMapCols: GridColDef[] = [
@@ -104,11 +105,10 @@ export default function Page() {
         { field: 'minPbba', headerName: 'Min PBBA', type: 'number', flex: 1, minWidth: 100, align: 'left', headerAlign: 'left' },
 
     ];
-    const [lmpS3Key, setLmpS3Key] = React.useState(null);
-    const [multiparousS3Key, setMultiparousS3Key] = React.useState(null);
-    const [nulliparousS3Key, setNulliparousS3Key] = React.useState(null);
+
     const [activeStep, setActiveStep] = React.useState(1);
     const [policyValue, setPolicyValue] = React.useState('egalitarian');
+    const [tableRows, setTableRows] = React.useState([]);
 
 
     const handleGenerateMapAlertClose = () => {
@@ -207,35 +207,6 @@ export default function Page() {
         handler: setPregnancyValues
     };
 
-    const generateMapObject = {
-        facilityFileJson,
-        totalDemandFile,
-        facilityFile,
-        geofenceFile,
-        updateGenerateMapAlertText,
-        geoboundaryObject,
-        laborType,
-        latentPhaseType,
-        username,
-        setCostMatrixData,
-        setCostAndOptimizationData,
-        setFileHash,
-        setBackdropOpen,
-        setBackdropText,
-        setBackdropProgress,
-        travelSpeedMotorizedUnmapped,
-        travelSpeedMotorizedMapped,
-        latentPhaseFileMulti,
-        laborOnsetFileLMP
-    }
-
-
-    const step1CheckObject = {
-        travelSpeedMotorizedUnmapped,
-        travelSpeedMotorizedMapped,
-        latentPhaseFileMulti,
-        laborOnsetFileLMP
-    }
 
     const zone1Object = {
         name: "Zone1",
@@ -263,6 +234,47 @@ export default function Page() {
         manualHandler: handleZone3ManualInput,
         selected:zone3Selected
     }
+
+    const generateMapObject = {
+        facilityFileJson,
+        totalDemandFile,
+        facilityFile,
+        geofenceFile,
+        updateGenerateMapAlertText,
+        geoboundaryObject,
+        laborType,
+        latentPhaseType,
+        username,
+        setCostMatrixData,
+        setCostAndOptimizationData,
+        setFileHash,
+        setFileHashTotal,
+        setBackdropOpen,
+        setBackdropText,
+        setBackdropProgress,
+        travelSpeedMotorizedUnmapped,
+        travelSpeedMotorizedMapped,
+        travelSpeedWalkingUnmapped,
+        travelSpeedWalkingMapped,
+        latentPhaseFileMulti,
+        latentPhaseFileNuli,
+        laborOnsetFileLMP,
+        policyValue,
+        objective: policyValue,
+        num_zones: numZonesSelector,
+        zone1Object,
+        zone2Object,
+        zone3Object
+    }
+
+
+    const step1CheckObject = {
+        travelSpeedMotorizedUnmapped,
+        travelSpeedMotorizedMapped,
+        latentPhaseFileMulti,
+        laborOnsetFileLMP
+    }
+
 
     const generateAssignmentMapObject = {
         speed: travelSpeedType,
@@ -356,10 +368,34 @@ export default function Page() {
             const worksheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[worksheetName];
             const jsonData = XLSX.utils.sheet_to_json(worksheet);
-            console.log("Updating json with uploaded file.")
-            setFacilityFileJson(jsonData)
+            console.log("Raw JSON data:", jsonData);
+
+            // Explicitly add 'Assigned MWH' field to the raw JSON data
+            const enhancedJsonData = jsonData.map(row => ({
+                ...row,
+                'Assigned MWH': row['Facility'] // Default to the Facility name
+            }));
+            console.log("Enhanced JSON data:", enhancedJsonData);
+
+            // Process the data and set the initial rows
+            const processedData = enhancedJsonData.map((row, index) => ({
+                id: index + 1,
+                facility: row['Facility'],
+                district: row['District'],
+                patientBeds: row['MWH Patient Beds'],
+                assignedMwh: row['Assigned MWH'],
+                latitude: row['Latitude'],
+                longitude: row['Longitude'],
+                facilities: enhancedJsonData.map((r) => r['Facility'])
+            }));
+            console.log("Processed row data:", processedData);
+
+            // Update both the raw JSON and the processed rows
+            setFacilityFileJson(enhancedJsonData);
+            setTableRows(processedData);
         }
     }
+
     function handleFacilityUploadClear() {
         setFacilityFile(null)
         setFacilityFileName(null)
@@ -421,7 +457,6 @@ export default function Page() {
             const s3Key = await uploadFileToS3(username, nulliparous_dir, event.target.files[0], event.target.files[0].name);
             if (s3Key) {
                 console.log("File uploaded to S3 with key:", s3Key);
-                setNulliparousS3Key(s3Key);
             }
         }
     }
@@ -437,7 +472,6 @@ export default function Page() {
             const s3Key = await uploadFileToS3(username, multiparous_dir, event.target.files[0], event.target.files[0].name);
             if (s3Key) {
                 console.log("File uploaded to S3 with key:", s3Key);
-                setMultiparousS3Key(s3Key);
             }
         }
     }
@@ -872,7 +906,6 @@ export default function Page() {
                     {activeStep === 1 && (
                         /*Demand Data Input*/
                         <Box sx={{mt: 3, mb:5}} id={'section1'}>
-                            <Button>test hash</Button>
                             <Typography variant="h5" gutterBottom={true}>
                                 I. Demand Data Input
                             </Typography>
@@ -1117,8 +1150,13 @@ export default function Page() {
                             </Typography>
                             <FileHandlingButtons fileObject={facilityFileObject}/>
                             {/*Table*/}
-                            <FacilityDataTable filename={facilityFileName} fileJson={facilityFileJson} setFacilityFileJson={setFacilityFileJson}/>
-
+                            <FacilityDataTable
+                                filename={facilityFileName}
+                                fileJson={facilityFileJson}
+                                setFacilityFileJson={setFacilityFileJson}
+                                rows={tableRows}
+                                setRows={setTableRows}
+                            />
                             <Box sx={{mt:5}}>
 
                             </Box>

@@ -137,6 +137,7 @@ function MapComponent(props) {
         return buffer;
     };
 
+    //TODO: map reloads every time
 
     // Process the file content (adapted from Python code)
     const processFile = (fileBuffer) => {
@@ -151,7 +152,7 @@ function MapComponent(props) {
             const maxPbba = Math.max(...jsonData.map(row => row['PBBA']));
             const minPbba = Math.min(...jsonData.map(row => row['PBBA']));
 
-            console.log(`Processed Excel file successfully: ${hfName}`);
+            console.debug(`Processed Excel file successfully: ${hfName}`);
 
             return {
                 hfName,

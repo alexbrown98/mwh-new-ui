@@ -8,12 +8,13 @@ import axios from "axios";
 const defaultProps = {
     filename: "",
     fileJson: null,
-    setFacilityFileJson: null
+    setFacilityFileJson: null,
+    rows: [],
+    setRows: null
 }
 
 export default function FacilityDataTable(props = defaultProps) {
-    const [rows, setRows] = React.useState([]);
-    const [initialLoad, setInitialLoad] = React.useState(true); // Track initial load
+    const { rows, setRows, setFacilityFileJson } = props;
 
     const columns: GridColDef[] = [
         { field: 'facility', headerName: 'Facility', flex: 1, minWidth: 150 },
@@ -25,48 +26,59 @@ export default function FacilityDataTable(props = defaultProps) {
             flex: 1,
             minWidth: 150,
             renderCell: (params) => (
-                <AssignedMwhCellRenderer value={params.value} row={params.row} setRows={setRows} />
+                <AssignedMwhCellRenderer
+                    value={params.value}
+                    row={params.row}
+                    setRows={handleRowsChange}
+                    rows={rows}
+                />
             ),
         },
     ];
-    const processFacilityFile = async () => {
-        if (props.fileJson && initialLoad) {
-            console.log("Processing facility file...");
-            const jsonData = props.fileJson;
-            const facilities = jsonData.map((row) => row['Facility']);
-            const processedData = jsonData.map((row, index) => ({
-                id: index + 1,
-                facility: row['Facility'],
-                district: row['District'],
-                patientBeds: row['MWH Patient Beds'],
-                assignedMwh: row['Facility'],
-                latitude: row['Latitude'],
-                longitude: row['Longitude'],
-                facilities
-            }));
+    const processFacilityFile = () => {
+        console.log("Processing facility file in FacilityDataTable");
+        const jsonData = props.fileJson;
 
-            setRows(processedData);
-            const updatedJsonData = processedData.map(row => ({
-                Latitude: row.latitude,
-                Longitude: row.longitude,
-                Facility: row.facility,
-                District: row.district,
-                'MWH Patient Beds': row.patientBeds,
-                'Assigned MWH': row.assignedMwh,
-            }));
+        const processedData = jsonData.map((row, index) => ({
+            id: index + 1,
+            facility: row['Facility'],
+            district: row['District'],
+            patientBeds: row['MWH Patient Beds'],
+            assignedMwh: row['Assigned MWH'],
+            latitude: row['Latitude'],
+            longitude: row['Longitude'],
+            facilities: jsonData.map((r) => r['Facility'])
+        }));
 
-            // Call props.setFacilityFileJson with the updated JSON data
-            console.log("Updating json with new mwh assignment.")
-            props.setFacilityFileJson(updatedJsonData);
-            setInitialLoad(false); // Set initial load to false after processing
-        } else {
-            console.log("No file or not initial load.");
-        }
+        handleRowsChange(processedData);
     };
 
+
+
+    const updateFacilityFileJson = React.useCallback((updatedRows) => {
+        const updatedJsonData = updatedRows.map(row => ({
+            Latitude: row.latitude,
+            Longitude: row.longitude,
+            Facility: row.facility,
+            District: row.district,
+            'MWH Patient Beds': row.patientBeds,
+            'Assigned MWH': row.assignedMwh,
+        }));
+
+        console.log("Updating json with new mwh assignment.")
+        setFacilityFileJson(updatedJsonData);
+    }, [setFacilityFileJson]);
+
+    const handleRowsChange = React.useCallback((newRows) => {
+        setRows(newRows);
+        updateFacilityFileJson(newRows);
+    }, [setRows, updateFacilityFileJson]);
+
     React.useEffect(() => {
-        processFacilityFile();
-    }, [props.fileJson]);
+        if (props.fileJson && rows.length === 0) {
+            processFacilityFile();
+        }
+    }, [props.fileJson, rows]);
 
     // Function to export the data as JSON
     const exportDataAsJson = () => {
@@ -91,7 +103,6 @@ export default function FacilityDataTable(props = defaultProps) {
             method: method
         };
         try {
-            console.log('Sending payload:', JSON.stringify(payload, null, 2));
             const response = await axios.post(url, payload, {
                 headers: {
                     'Content-Type': 'application/json'
@@ -173,14 +184,13 @@ export default function FacilityDataTable(props = defaultProps) {
     );
 }
 
-const AssignedMwhCellRenderer = ({ value, row, setRows }) => {
+const AssignedMwhCellRenderer = ({ value, row, setRows, rows }) => {
     const handleChange = (event) => {
         const newAssignedMwh = event.target.value;
-        setRows((prevRows) =>
-            prevRows.map((r) =>
-                r.id === row.id ? { ...r, assignedMwh: newAssignedMwh } : r
-            )
+        const updatedRows = rows.map((r) =>
+            r.id === row.id ? { ...r, assignedMwh: newAssignedMwh } : r
         );
+        setRows(updatedRows);
     };
 
     return (
@@ -190,7 +200,6 @@ const AssignedMwhCellRenderer = ({ value, row, setRows }) => {
             displayEmpty
             fullWidth
         >
-            {/* List of all facilities */}
             {row.facilities.map((facility) => (
                 <MenuItem key={facility} value={facility}>
                     {facility}
