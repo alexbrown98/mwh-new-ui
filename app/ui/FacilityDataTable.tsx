@@ -19,7 +19,7 @@ export default function FacilityDataTable(props = defaultProps) {
     const columns: GridColDef[] = [
         { field: 'facility', headerName: 'Facility', flex: 1, minWidth: 150 },
         { field: 'district', headerName: 'District', flex: 1, minWidth: 150 },
-        { field: 'patientBeds', headerName: 'MWH Patient Beds', type: 'number', flex: 1, minWidth: 100, align: 'left', headerAlign: 'left' },
+        { field: 'patientBeds', headerName: 'MWH Patient Beds', type: 'number', editable:true, flex: 1, minWidth: 100, align: 'left', headerAlign: 'left' },
         {
             field: 'assignedMwh',
             headerName: 'Assigned MWH',
@@ -149,6 +149,16 @@ export default function FacilityDataTable(props = defaultProps) {
 
     }
 
+    const processRowUpdate = React.useCallback((newRow, oldRow) => {
+        console.log("Processing row update", newRow, oldRow);
+        const updatedRow = { ...oldRow, ...newRow };
+        const updatedRows = rows.map((row) =>
+            row.id === updatedRow.id ? updatedRow : row
+        );
+        handleRowsChange(updatedRows);
+        return updatedRow;
+    }, [rows, handleRowsChange]);
+
     return (
         <Box>
             <Box>
@@ -163,6 +173,8 @@ export default function FacilityDataTable(props = defaultProps) {
                                 },
                             }}
                             checkboxSelection
+                            processRowUpdate={processRowUpdate}
+
                         />
                     </Box>
                 )}

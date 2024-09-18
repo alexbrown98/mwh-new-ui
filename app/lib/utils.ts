@@ -257,7 +257,7 @@ export const getGeoboundary = async (generateMapObject) => {
           generateMapObject.setBackdropProgress(25);
           generateMapObject.setBackdropText("Step 2/2: Generating cost matrix data...")
 
-          const backendResults = await requestToBackend(filename, s3Url, generateMapObject.username, generateMapObject.travelSpeedMotorizedUnmapped, generateMapObject.travelSpeedMotorizedMapped, generateMapObject.setBackdropProgress); //TODO: change hardcoded
+          const backendResults = await requestToBackend(filename, s3Url, generateMapObject.username, generateMapObject.travelSpeedMotorizedUnmapped, generateMapObject.travelSpeedMotorizedMapped, generateMapObject.setBackdropProgress);
           if (backendResults) {
             //TODO: if travel speed is multiple, there will be 2 cost and optimization layers
             console.log('Backend processing completed successfully:', backendResults);
@@ -481,7 +481,7 @@ const requestToBackend = async (hash, s3Url, username, unmappedSpeed, mappedSpee
     const distance_to_road_exists = await checkS3FileExists(bucketName, `${baseKeyPath}/distance_to_road_${filehash}.zip`)
     if (!distance_to_road_exists) {
       console.log("Distance to road doesnt exist for hash ", filehash);
-      // Send the payload to the first Lambda endpoint TODO: either fix response or dont use await
+      // Send the payload to the first Lambda endpoint 
       const response = fetch(lambdaEndpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -605,7 +605,7 @@ const pollS3ForFile = async (s3Key, bucketName, maxRetries = 20, retryInterval =
       if (response.status === 404) {
         console.log('File not found, retrying...');
         await new Promise((resolve) => setTimeout(resolve, retryInterval));
-        continue;
+
       } else if (response.ok) {
         console.log('File found in S3.');
         const data = await response.json();

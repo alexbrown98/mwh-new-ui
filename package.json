@@ -10,6 +10,7 @@
   "dependencies": {
     "@aws-amplify/adapter-nextjs": "^1.2.15",
     "@aws-amplify/auth": "^6.3.16",
+    "@aws-amplify/ui-react": "^6.4.0",
     "@aws-sdk/client-s3": "^3.637.0",
     "@aws-sdk/credential-providers": "^3.637.0",
     "@emotion/react": "^11.11.4",
@@ -22,7 +23,7 @@
     "@types/node": "20.5.7",
     "@vercel/postgres": "^0.5.0",
     "autoprefixer": "10.4.15",
-    "aws-amplify": "^6.5.3",
+    "aws-amplify": "^6.6.2",
     "aws-sdk": "^2.1608.0",
     "axios": "^1.6.8",
     "bcrypt": "^5.1.1",

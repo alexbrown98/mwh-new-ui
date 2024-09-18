@@ -12,13 +12,30 @@ const defaultProps = {
     optimizationEngineData: null,
     setAssignmentMapRows: null,
     backdropObject: null,
+    isVisible: null,
 };
 
 function MapComponent(props) {
     const [facilityData, setFacilityData] = React.useState(null);
     const [geoboundaryData, setGeoboundaryData] = React.useState(null);
     const [plotData, setPlotData] = React.useState([]); // State to store plot data
+    const processedFiles = React.useRef(new Set());
     const bucketName = "user-facility-files"; // Your S3 bucket name
+    const plotRef = React.useRef(null);
+    const [optimizationVersion, setOptimizationVersion] = React.useState(0);
+
+    React.useEffect(() => {
+        if (props.isVisible && plotRef.current) {
+            const resizeHandler = () => {
+                window.dispatchEvent(new Event('resize'));
+            };
+
+            // Trigger resize after a short delay to ensure the container has fully rendered
+            const timeoutId = setTimeout(resizeHandler, 100);
+
+            return () => clearTimeout(timeoutId);
+        }
+    }, [props.isVisible]);
 
     React.useEffect(() => {
         if (props.facilityFileJson) {
@@ -45,6 +62,7 @@ function MapComponent(props) {
 
     React.useEffect(() => {
         if (props.optimizationEngineData) {
+            setOptimizationVersion(prev => prev + 1);
             fetchAndProcessFiles(props.optimizationEngineData);
         }
     }, [props.optimizationEngineData]);
@@ -53,6 +71,10 @@ function MapComponent(props) {
     // Function to fetch and process files from S3
     const fetchAndProcessFiles = async (outputFiles) => {
         console.log("Fetching optimisation result files.", outputFiles)
+        processedFiles.current = new Set();
+        setPlotData(prevData => prevData.filter(trace =>
+            trace.name !== 'PBBA Gradient' && trace.name !== 'Facility Categories'
+        ));
         const s3Client = new S3Client({
             region: "eu-west-2", // Replace with your region
             credentials: fromCognitoIdentityPool({
@@ -68,12 +90,12 @@ function MapComponent(props) {
         let pbbaValues = [];
 
         for (const s3Key of outputFiles.output_files) {
+            if (processedFiles.current.has(s3Key)) continue;
             try {
                 const getObjectParams = { Bucket: bucketName, Key: s3Key };
                 const command = new GetObjectCommand(getObjectParams);
                 const response = await s3Client.send(command);
 
-                // Convert response body stream to buffer
                 const buffer = await readableStreamToBuffer(response.Body);
                 const { hfName, assignedMwh, maxPbba, minPbba, df } = processFile(buffer);
 
@@ -82,7 +104,6 @@ function MapComponent(props) {
                     continue;
                 }
 
-                // Update table data
                 newTableData.push({
                     id: hfName,
                     'hfName': hfName,
@@ -100,6 +121,7 @@ function MapComponent(props) {
                 allNames.push(...latLonData.map(() => hfName));
                 pbbaValues.push(...pbbaData);
 
+                processedFiles.current.add(s3Key);
             } catch (error) {
                 console.error(`Error retrieving file from S3: ${s3Key}, Error: ${error.message}`);
             }
@@ -137,8 +159,6 @@ function MapComponent(props) {
         return buffer;
     };
 
-    //TODO: map reloads every time
-
     // Process the file content (adapted from Python code)
     const processFile = (fileBuffer) => {
         try {
@@ -169,7 +189,6 @@ function MapComponent(props) {
 
     // Function to create and add traces
     const createTraces = (lats, lons, pbbaTexts, names, pbbaValues) => {
-        // PBBA gradient trace
         const pbbaTrace = {
             type: 'scattermapbox',
             lat: lats,
@@ -185,11 +204,10 @@ function MapComponent(props) {
             name: 'PBBA Gradient'
         };
 
-        // Facility categories trace
         const colorMap = {};
-        names.forEach((name, index) => {
+        names.forEach((name) => {
             if (!colorMap[name]) {
-                colorMap[name] = `hsl(${Math.random() * 360}, 100%, 50%)`; // Random colors for example
+                colorMap[name] = `hsl(${Math.random() * 360}, 100%, 50%)`;
             }
         });
         const facilityColors = names.map(name => colorMap[name]);
@@ -208,8 +226,28 @@ function MapComponent(props) {
             name: 'Facility Categories'
         };
 
-        setPlotData(prevData => [...prevData, pbbaTrace, facilityTrace]);
+        setPlotData(prevData => {
+            const newData = [...prevData];
+            const pbbaIndex = newData.findIndex(trace => trace.name === 'PBBA Gradient');
+            const facilityIndex = newData.findIndex(trace => trace.name === 'Facility Categories');
+
+            if (pbbaIndex !== -1) {
+                newData[pbbaIndex] = pbbaTrace;
+            } else {
+                newData.push(pbbaTrace);
+            }
+
+            if (facilityIndex !== -1) {
+                newData[facilityIndex] = facilityTrace;
+            } else {
+                newData.push(facilityTrace);
+            }
+
+            return newData;
+        });
     };
+
+    // ... (keep other functions like processFacilityData, processPregnancyValues, etc.)
 
     const processFacilityData = (data) => {
         const processedData = data.map(row => ({
@@ -304,6 +342,7 @@ function MapComponent(props) {
         height: 550,
         hovermode: 'closest',
         showlegend: true,
+        autosize: true,
         legend: { x: 1, y: 0.95 }
     } : {
         mapbox: {
@@ -365,12 +404,17 @@ function MapComponent(props) {
     ];
 
     return (
-        <Plot
+        <div style={{ width: '100%', height: '550px' }}> {/* Fixed size container */}
+            <Plot
             data={data}
             layout={layout}
-            useResizeHandler
+            useResizeHandler={true}
             style={{ width: "100%", height: "100%" }}
-        />
+            ref={plotRef}
+            revision={optimizationVersion}
+            />
+        </div>
+
     );
 }
 

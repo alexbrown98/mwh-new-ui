@@ -29,8 +29,13 @@ import {DataGrid, GridColDef} from "@mui/x-data-grid";
 import {lmp_dir, multiparous_dir, nulliparous_dir} from "@/app/lib/constants";
 import HorizontalNonLinearStepper from "@/app/lib/HorizontalNonLinearStepper";
 import {CustomTextInput, Item} from "@/app/dashboard/customTextInput";
+import { Amplify } from 'aws-amplify';
+import config from '../amplifyconfiguration.json';
+Amplify.configure(config);
+import { withAuthenticator } from '@aws-amplify/ui-react';
+import type { WithAuthenticatorProps } from '@aws-amplify/ui-react';
 
-export default function Page() {
+export function Page({signOut,user}: WithAuthenticatorProps) {
 
     const [travelSpeedType, setTravelSpeedType] = React.useState('single');
     const [travelSpeedTypeDisplay, setTravelSpeedTypeDisplay] = React.useState('multiple');
@@ -368,14 +373,12 @@ export default function Page() {
             const worksheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[worksheetName];
             const jsonData = XLSX.utils.sheet_to_json(worksheet);
-            console.log("Raw JSON data:", jsonData);
 
             // Explicitly add 'Assigned MWH' field to the raw JSON data
             const enhancedJsonData = jsonData.map(row => ({
                 ...row,
                 'Assigned MWH': row['Facility'] // Default to the Facility name
             }));
-            console.log("Enhanced JSON data:", enhancedJsonData);
 
             // Process the data and set the initial rows
             const processedData = enhancedJsonData.map((row, index) => ({
@@ -388,7 +391,6 @@ export default function Page() {
                 longitude: row['Longitude'],
                 facilities: enhancedJsonData.map((r) => r['Facility'])
             }));
-            console.log("Processed row data:", processedData);
 
             // Update both the raw JSON and the processed rows
             setFacilityFileJson(enhancedJsonData);
@@ -430,7 +432,6 @@ export default function Page() {
             const s3Key = await uploadFileToS3(username, lmp_dir, event.target.files[0], event.target.files[0].name);
             if (s3Key) {
                 console.log("File uploaded to S3 with key:", s3Key);
-                setLmpS3Key(s3Key);
             }
         }
     }
@@ -466,6 +467,7 @@ export default function Page() {
     }
 
     async function handleLatentPhaseMultiUpload(event) {
+        console.debug("inside multi upload handler")
         if (event.target.files[0] && event.target.files[0].name) {
             setLatentPhaseFileMulti(event.target.files[0])
             setLatentPhaseFileMultiName(event.target.files[0].name)
@@ -765,122 +767,19 @@ export default function Page() {
         setTotalDemandFileName(sessionObject.demand_data_tif_file_name.S)
     }
 
+
     React.useEffect(() => {
-        const code = getAuthorizationCode();
-
-        if (code && userAuth === 'false') {
-            // Exchange code for tokens if userAuth is false and code is present
-            exchangeCodeForTokens(code);
-        } else if (!isTokenExpired() && localStorage.getItem('id_token')) {
-            // Set userAuth to true if the token is valid
-            const idToken = localStorage.getItem('id_token');
-            validateAndSetUsername(idToken);
-        }
-
-        // Periodic check for token expiry
-        const intervalId = setInterval(() => {
-            console.log('Checking auth status');
-            if (isTokenExpired()) {
-                handleLogout();
-            }
-        }, 60000); // Check every minute
-
-        // Cleanup interval on component unmount
-        return () => clearInterval(intervalId);
-    }, []);
-
-    function getAuthorizationCode() {
-        const urlParams = new URLSearchParams(window.location.search);
-        console.log('Getting auth code from URL');
-        return urlParams.get('code');
-    }
-
-    function exchangeCodeForTokens(code) {
-        fetch('https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get-auth-token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ code: code, auth_type: 'dev' }),
-        })
-            .then((response) => response.json())
-            .then((data) => {
-                // Remove surrounding quotes from tokens
-                localStorage.setItem('id_token', data.id_token);
-                setIdToken(data.id_token)
-                localStorage.setItem('access_token', data.access_token);
-                const expiryTime = new Date().getTime() + data.expires_in * 1000; // Convert to milliseconds
-                localStorage.setItem('token_expiry', expiryTime);
-                localStorage.setItem('userAuth', 'true'); // Store userAuth status
-                window.history.replaceState(null, null, window.location.pathname); // Remove the code from the URL
-                setUserAuth('true'); // Update state to reflect the user is authenticated
-                console.log('Auth token set');
-                validateAndSetUsername(data.access_token);
-
-            })
-            .catch((error) => {
-                console.error('Error exchanging code for tokens:', error);
-            });
-    }
-
-    function validateAndSetUsername(idToken) {
-        if (validateToken(idToken)) {
-            const username = getUsernameFromToken(idToken);
-            setUsername(username);
+        if (user) {
+            setUsername(user.username)
         } else {
-            handleLogout()
-        };
-    }
-
-    function validateToken(token) {
-        if (!token) {
-            return false
+            console.log("user not logged in.")
         }
-        return fetch('https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/validate-token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ access_token: token }),
-        })
-            .then((response) => {
-                return response.status===200;
-            })
-            .catch((error) => {
-                console.error('Error validating token:', error);
-                return false;
-            });
-    }
-
-    function getUsernameFromToken(token) {
-        try {
-            const decodedToken = jwtDecode(token);
-            const username = decodedToken['cognito:username'] || decodedToken['username'] || decodedToken['sub'];
-            console.log("Username is " + username)
-            return username;
-        } catch (error) {
-            console.error('Error decoding token:', error);
-            return null;
-        }
-    }
-
-    function isTokenExpired() {
-        const tokenExpiry = parseInt(localStorage.getItem('token_expiry'), 10);
-        return !tokenExpiry || new Date().getTime() > tokenExpiry;
-    }
-
-    function handleLogout() {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('token_expiry');
-        localStorage.removeItem('id_token');
-        localStorage.removeItem('userAuth');
-        setUserAuth('false');
-        location.reload();
-    }
+    },[user])
 
     return (
         <Container maxWidth={'false'}>
-            {userAuth == 'true' && (
+            {user && (
+
                 <Box>
                     <Backdrop
                         sx={(theme) => ({
@@ -900,12 +799,11 @@ export default function Page() {
                             sx={{ width: '50%', mt: 2 }}  // Adjust width and margin-top for spacing
                         />
                     </Backdrop>
-                    <Navbar userAuth={userAuth} logoutHandler={handleLogout} loadSessionHandler={loadSession} saveSessionHandler={handleSaveSession}/>
+                    <Navbar user={user} logoutHandler={signOut} loadSessionHandler={loadSession} saveSessionHandler={handleSaveSession}/>
                     <HorizontalNonLinearStepper mainPageActiveStepHandler={setActiveStep} step1CheckObject={step1CheckObject}/>
 
-                    {activeStep === 1 && (
-                        /*Demand Data Input*/
-                        <Box sx={{mt: 3, mb:5}} id={'section1'}>
+                        {/*demand data input*/}
+                        <Box sx={{mt: 3, mb:5,display: activeStep === 1 ? 'block' : 'none'}} id={'section1'}>
                             <Typography variant="h5" gutterBottom={true}>
                                 I. Demand Data Input
                             </Typography>
@@ -1141,10 +1039,8 @@ export default function Page() {
                             <InputSection fieldObject={latentPhaseObject}/>
                             <InputSection fieldObject={laborObject}/>
                         </Box>
-                    )}
-                    {activeStep === 2 && (
-                        /*Facility Data Input*/
-                        <Box sx={{mt:5, mb: 5}}>
+                        {/*facility data input*/}
+                        <Box sx={{mt:5, mb: 5,display: activeStep === 2 ? 'block' : 'none'}}>
                             <Typography sx={{mb:3}} variant="h5" gutterBottom={true}>
                                 II. Facility Data Input
                             </Typography>
@@ -1161,10 +1057,8 @@ export default function Page() {
 
                             </Box>
                         </Box>
-                    )}
-                    {activeStep === 3 && (
-                        /*Policy Definition*/
-                        <Box sx={{mt:5, mb:5}}>
+                        {/* policy definition */}
+                        <Box sx={{mt:5, mb:5,display: activeStep === 3 ? 'block' : 'none'}}>
                             <Typography variant="h5" gutterBottom={true} sx={{mb:3}}>
                                 III - Policy Definition
                             </Typography>
@@ -1217,10 +1111,8 @@ export default function Page() {
 
 
                         </Box>
-                    )}
-                    {activeStep === 4 && (
-                        /*Assignment Map*/
-                        <Box sx={{mt:5, mb:5}}>
+                         {/*assignment map*/}
+                        <Box sx={{mt:5, mb:5, display: activeStep === 4 ? 'block' : 'none'}}>
                             {assignmentMapRows && (
                                 <DataGrid
                                     rows={assignmentMapRows}
@@ -1242,6 +1134,7 @@ export default function Page() {
                                           optimizationEngineData = {optimisationEngineData}
                                           setAssignmentMapRows = {setAssignmentMapRows}
                                           backdropObject={backdropObject}
+                                          isVisible={activeStep === 4}
                             />
                             <Box sx={{mt:5, mb:3}}>
                                 <Button
@@ -1260,19 +1153,21 @@ export default function Page() {
                             <Button variant="contained"
                                     sx = {{'mt': 3}}
                                     onClick={() => generateAssignmentMap(generateAssignmentMapObject)}
+                                    disabled={costAndOptimizationData === null}
                             >
                                 Generate Assignment Map
                             </Button>
                         </Box>
-                    )}
 
                 </Box>
             )}
-            {userAuth == 'false' && (
-                <Navbar userAuth={userAuth} loginHandler={handleLogin} logoutHandler={handleLogout}/>
+            {!user && (
+                <Navbar userAuth={userAuth} loginHandler={handleLogin} logoutHandler={signOut}/>
             )}
 
 
         </Container>
     );
 }
+
+export default withAuthenticator(Page);
