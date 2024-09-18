@@ -16,6 +16,6 @@ export const CustomTextInput = ({value, onChange}) => {
 // @ts-ignore
 export const Item = styled(Box)(({theme}) => ({
     textAlign: 'center',
-    color: black(),
+    color: 'black',
 
 }));
