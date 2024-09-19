@@ -25,7 +25,8 @@ const defaultObject = {
     fileType: "",
     fileHandler: null,
     fileClearHandler: null,
-    website_sector: ""
+    website_sector: "",
+    username:null
 }
 
 export default function FileHandlingButtons({fileObject= defaultObject}) {
@@ -59,7 +60,7 @@ export default function FileHandlingButtons({fileObject= defaultObject}) {
 
     React.useEffect(() => {
         const fetchData = async () => {
-            const data = await getSavedFiles(fileObject.website_sector, "74877d13-99d1-4164-aaaa-0884d86a223c");
+            const data = await getSavedFiles(fileObject.website_sector, fileObject.username);
             setFiles(data);
         };
         if (open) {

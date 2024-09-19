@@ -25,7 +25,7 @@ import {generateAssignmentMap, getGeoboundary, loadSessionurl, saveSessionUrl, u
 import Backdrop from '@mui/material/Backdrop';
 import '@/app/lib/constants'
 import {DataGrid, GridColDef} from "@mui/x-data-grid";
-import {lmp_dir, multiparous_dir, nulliparous_dir} from "@/app/lib/constants";
+import {geoplot_dir, lmp_dir, multiparous_dir, nulliparous_dir, tif_dir} from "@/app/lib/constants";
 import HorizontalNonLinearStepper from "@/app/lib/HorizontalNonLinearStepper";
 import {CustomTextInput, Item} from "@/app/dashboard/customTextInput";
 import {Amplify} from 'aws-amplify';
@@ -309,21 +309,24 @@ export default function DashboardClient({signOut,user}: WithAuthenticatorProps) 
         fileName: facilityFileName,
         fileHandler: handleFacilityUpload,
         fileType: "",
-        fileClearHandler: handleFacilityUploadClear
+        fileClearHandler: handleFacilityUploadClear,
+        username: username
     }
     const totalDemandFileObject = {
         fileName: totalDemandFileName,
         fileHandler: handleTotalDemandUpload,
         fileType: "Total Demand File (.tif)",
         fileClearHandler: handleTotalDemandClear,
-        website_sector: "total-demand"
+        website_sector: "total-demand",
+        username: username
     }
     const geofenceFileObject = {
         fileName: geofenceFileName,
         fileHandler: handleGeofenceUpload,
         fileType: "Geofence File (.geojson)",
         fileClearHandler: handleGeofenceClear,
-        website_sector: "geo-plot"
+        website_sector: "geo-plot",
+        username: username
     }
 
     const laborOnsetFileObjectLMP = {
@@ -331,7 +334,8 @@ export default function DashboardClient({signOut,user}: WithAuthenticatorProps) 
         fileHandler: handleLaborOnsetLMPUpload,
         fileType: "Labor Onset LMP (.xlsx)",
         fileClearHandler: handleLaborOnsetLMPClear,
-        website_sector: "lmp"
+        website_sector: "lmp",
+        username: username
     }
 
     const laborOnsetFileObjectNoLMP = {
@@ -348,6 +352,7 @@ export default function DashboardClient({signOut,user}: WithAuthenticatorProps) 
         fileType: "Latent Phase Nulliparous (.xlsx)",
         fileClearHandler: handleLatentPhaseNuliClear,
         website_sector: "nulliparous",
+        username: username
     }
 
     const latentPhaseFileObjectMulti = {
@@ -356,6 +361,7 @@ export default function DashboardClient({signOut,user}: WithAuthenticatorProps) 
         fileType: "Latent Phase Multiparous (.xlsx)",
         fileClearHandler: handleLatentPhaseMultiClear,
         website_sector: "multiparous",
+        username: username
     }
 
     function handleFacilityUpload(event) {
@@ -403,20 +409,28 @@ export default function DashboardClient({signOut,user}: WithAuthenticatorProps) 
         setFacilityFileJson(null)
     }
 
-    function handleTotalDemandUpload(event) {
+    async function handleTotalDemandUpload(event) {
         if (event.target.files[0] && event.target.files[0].name) {
             setTotalDemandFile(event.target.files[0])
             setTotalDemandFileName(event.target.files[0].name)
+            const s3Key = await uploadFileToS3(username, tif_dir, event.target.files[0], event.target.files[0].name);
+            if (s3Key) {
+                console.log("File uploaded to S3 with key:", s3Key);
+            }
         }
     }
     function handleTotalDemandClear() {
         setTotalDemandFile(null)
         setTotalDemandFileName(null)
     }
-    function handleGeofenceUpload(event) {
+    async function handleGeofenceUpload(event) {
         if (event.target.files[0] && event.target.files[0].name) {
             setGeofenceFile(event.target.files[0])
             setGeofenceFileName(event.target.files[0].name)
+            const s3Key = await uploadFileToS3(username, geoplot_dir, event.target.files[0], event.target.files[0].name);
+            if (s3Key) {
+                console.log("File uploaded to S3 with key:", s3Key);
+            }
         }
     }
     function handleGeofenceClear() {
@@ -1168,12 +1182,3 @@ export default function DashboardClient({signOut,user}: WithAuthenticatorProps) 
         </Container>
     );
 }
-//
-// // This is a wrapper component that applies the withAuthenticator HOC
-// function AuthenticatedDashboardPage(props: any) {
-//     const AuthenticatedPage = withAuthenticator(DashboardPage);
-//     return <AuthenticatedPage {...props} />;
-// }
-//
-// // This is the default export that Next.js expects
-// export default AuthenticatedDashboardPage;
