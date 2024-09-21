@@ -64,14 +64,30 @@ function MapComponent(props) {
         if (props.optimizationEngineData) {
             setOptimizationVersion(prev => prev + 1);
             fetchAndProcessFiles(props.optimizationEngineData);
+        } else {
+            clearOptimizationTraces();
         }
     }, [props.optimizationEngineData]);
 
 
+    // Add this new function to clear optimization traces
+    const clearOptimizationTraces = () => {
+        setPlotData(prevData => prevData.filter(trace =>
+            trace.name !== 'PBBA Gradient' && trace.name !== 'Facility Categories'
+        ));
+        props.setAssignmentMapRows([]);  // Clear the assignment map rows
+    };
+
     // Function to fetch and process files from S3
     const fetchAndProcessFiles = async (outputFiles) => {
+        if (!outputFiles || outputFiles.output_files.length === 0) {
+            clearOptimizationTraces();
+            return;
+        }
         console.log("Fetching optimisation result files.", outputFiles)
         processedFiles.current = new Set();
+        clearOptimizationTraces();
+
         setPlotData(prevData => prevData.filter(trace =>
             trace.name !== 'PBBA Gradient' && trace.name !== 'Facility Categories'
         ));
@@ -130,9 +146,8 @@ function MapComponent(props) {
         // Create traces
         createTraces(allLats, allLons, allPbbaTexts, allNames, pbbaValues);
         props.setAssignmentMapRows(newTableData);
-        props.backdropObject.setBackdropOpen(false);
-        props.backdropObject.setBackdropText("");
-        props.backdropObject.setBackdropProgress(0);
+        props.backdropObject.isGenerating(false);
+        props.backdropObject.setCurrentStatusVerbose("");
     };
 
     // Convert ReadableStream to a Buffer (compatible with browser)

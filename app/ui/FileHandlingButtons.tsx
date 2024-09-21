@@ -26,7 +26,8 @@ const defaultObject = {
     fileHandler: null,
     fileClearHandler: null,
     website_sector: "",
-    username:null
+    username:null,
+    generating:null,
 }
 
 export default function FileHandlingButtons({fileObject= defaultObject}) {
@@ -78,6 +79,7 @@ export default function FileHandlingButtons({fileObject= defaultObject}) {
             </Box>
             <Box>
                 <Button  size={'small'} sx={{mr:2, mb:1}} variant="contained"
+                         disabled={fileObject.generating}
                          component="label"
                          startIcon={<CloudUploadIcon />}
                 >Upload file
@@ -85,6 +87,7 @@ export default function FileHandlingButtons({fileObject= defaultObject}) {
                 </Button>
                 <Button
                     onClick={handleOpen}
+                    disabled={fileObject.generating}
                     size={'small'}  sx={{mb:1}}
                     color={"secondary"}
                     variant="contained"
@@ -123,7 +126,7 @@ export default function FileHandlingButtons({fileObject= defaultObject}) {
                         <Button disableRipple={true} sx={{color:'green',cursor: 'default'}} variant="text" gutterBottom={true}>
                             {fileObject.fileName}
                         </Button>
-                        <IconButton onClick={fileObject.fileClearHandler} color={'error'} size={'small'}>
+                        <IconButton disabled={fileObject.generating} onClick={fileObject.fileClearHandler} color={'error'} size={'small'}>
                             <CancelIcon></CancelIcon>
                         </IconButton>
                     </Box>

@@ -1,7 +1,9 @@
 import axios from "axios";
 import crypto from 'crypto-js';
-import {S3Client, ListObjectsV2Command, HeadObjectCommand, GetObjectCommand} from "@aws-sdk/client-s3";
+import {GetObjectCommand, ListObjectsV2Command, S3Client} from "@aws-sdk/client-s3";
 import {fromCognitoIdentityPool} from "@aws-sdk/credential-providers";
+import * as XLSX from 'xlsx';
+import {empirical_data_dir, status_error_generate_map, status_generating_map} from "@/app/lib/constants";
 
 export const formatCurrency = (amount) => {
   return (amount / 100).toLocaleString('en-US', {
@@ -10,16 +12,15 @@ export const formatCurrency = (amount) => {
   });
 };
 
-export const fileDbUrl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/databaseFileManager"
-export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/geoboundary'
-export const saveSessionUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/save_user_session'
-export const loadSessionurl = "https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get_user_session"
-const data_consolidation_lambda_endpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/file-consolidation'
-// const optimisation_engine_url = "https://acf2a7bc-c344-47e6-8561-a2b599742982.mock.pstmn.io/run-optimization"
-const optimisation_engine_url = "http://localhost:8090/run-optimization"
-const lambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/distance-to-road';
-const costMatrixLambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/cost-matrix';
-const costAndOptimizationEndpoint = 'http://localhost:5001/process';
+export const fileDbUrl = process.env.NEXT_PUBLIC_FILE_DB_URL;
+export const geoboundaryUrl = process.env.NEXT_PUBLIC_GEOBOUNDARY_URL;
+export const saveSessionUrl = process.env.NEXT_PUBLIC_SAVE_SESSION_URL;
+export const loadSessionurl = process.env.NEXT_PUBLIC_LOAD_SESSION_URL;
+const data_consolidation_lambda_endpoint = process.env.NEXT_PUBLIC_DATA_CONSOLIDATION_URL;
+const optimisation_engine_url = process.env.NEXT_PUBLIC_OPTIMIZATION_ENGINE_URL;
+const lambdaEndpoint = process.env.NEXT_PUBLIC_DISTANCE_TO_ROAD_URL;
+const costMatrixLambdaEndpoint = process.env.NEXT_PUBLIC_COST_MATRIX_URL;
+const costAndOptimizationEndpoint = process.env.NEXT_PUBLIC_COST_OPTIMIZATION_URL;
 
 
 export const generateAssignmentMap = async (generateAssignmentMapObject) => {
@@ -36,19 +37,17 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
     console.log("Cannot proceed without latent phase file.")
     return;
   }
-  generateAssignmentMapObject.setBackdropOpen(true);
-  generateAssignmentMapObject.setBackdropText("Step 1/3: Combining input files..")
-  generateAssignmentMapObject.setBackdropProgress(5)
-
+  generateAssignmentMapObject.setCurrentStatusVerbose("combining input files..")
+  generateAssignmentMapObject.isGenerating(true);
   const empirical_data_s3_key = await
       combineXlsxFiles(generateAssignmentMapObject.lmp_file,
           generateAssignmentMapObject.nulli_file, generateAssignmentMapObject.multi_file,
           generateAssignmentMapObject.username, empirical_data_dir)
   if (!empirical_data_s3_key) {
     console.log("Error when combining files.")
-    generateAssignmentMapObject.setBackdropText("")
-    generateAssignmentMapObject.setBackdropOpen(false);
-    generateAssignmentMapObject.setBackdropProgress(0);
+    generateAssignmentMapObject.isGenerating(false);
+    generateAssignmentMapObject.setCurrentStatusVerbose("");
+
     return;
   }
 
@@ -62,9 +61,7 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
     table: generateAssignmentMapObject.table
   }
 
-  generateAssignmentMapObject.setBackdropOpen(true);
-  generateAssignmentMapObject.setBackdropText("Step 2/3: Making call for file consolidation..")
-  generateAssignmentMapObject.setBackdropProgress(15)
+  generateAssignmentMapObject.setCurrentStatusVerbose("making call for file consolidation..")
   let payload = JSON.stringify(payloadObject);
   const response = await fetch(data_consolidation_lambda_endpoint,{
     method: 'POST',
@@ -73,16 +70,16 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
   });
 
   if (response.ok) {
-    console.log("Consolidation successful.");
+    generateAssignmentMapObject.setCurrentStatusVerbose("consolidation successful..")
     let responseJson = await response.json();
     let parsedBody;
     try {
       parsedBody = JSON.parse(responseJson.body);
     } catch (error) {
       console.error("Error parsing response body:", error);
-      generateAssignmentMapObject.setBackdropText("")
-      generateAssignmentMapObject.setBackdropOpen(false);
-      generateAssignmentMapObject.setBackdropProgress(0);
+      generateAssignmentMapObject.isGenerating(false);
+      generateAssignmentMapObject.setCurrentStatusVerbose("");
+
       return;
     }
 
@@ -100,6 +97,7 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
       nulli: generateAssignmentMapObject.nulli_file,
       gestation: generateAssignmentMapObject.lmp_file
     }
+    generateAssignmentMapObject.setCurrentStatusVerbose("generating input hash..")
 
     const s3Key = parsedBody.s3_key;
     const file_count = parsedBody.file_count;
@@ -118,10 +116,14 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
     console.debug("Generated second hash: ", newHash)
     const dirForCheck = generateAssignmentMapObject.username + "/optimization-engine-results/" + newHash + "/"
     const checkOptiExists = await checkS3DirectoryExists('user-facility-files', dirForCheck, file_count);
+    generateAssignmentMapObject.setCurrentStatusVerbose("checking if hash already exists..")
 
     if (!checkOptiExists) {
+      generateAssignmentMapObject.setCurrentStatusVerbose("making call to optimization engine..")
+
       // hashed file doesnt exist, generate it
       let opti_payload = {
+
         s3_key: s3Key,
         username: generateAssignmentMapObject.username,
         hash: newHash,
@@ -132,8 +134,6 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
             generateAssignmentMapObject.zone3Object, num_zones_int),
       }
 
-      generateAssignmentMapObject.setBackdropText("Step 3/3: Making call to optimization engine..")
-      generateAssignmentMapObject.setBackdropProgress(50)
       console.debug("Making request to optimisation engine.")
       const opti_response = await fetch(optimisation_engine_url, {
         method: 'POST',
@@ -142,34 +142,35 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
       })
 
       if (opti_response.ok) {
-        generateAssignmentMapObject.setBackdropProgress(80);
+        generateAssignmentMapObject.setCurrentStatusVerbose("processing files..")
         console.debug("Optimisation response: ", opti_response)
         const responseBody = await opti_response.json();
         try {
           const results = await pollForOptimizationFiles(responseBody.s3_output_dir, file_count)
           console.debug("Polling done:", results)
           generateAssignmentMapObject.setOptimisationEngineData(results);
-          generateAssignmentMapObject.setBackdropProgress(90);
+          generateAssignmentMapObject.isGenerating(false);
+          generateAssignmentMapObject.setCurrentStatusVerbose("");
         } catch (e) {
           console.error("An error occurred when polling for results.", e)
-          generateAssignmentMapObject.setBackdropText("")
-          generateAssignmentMapObject.setBackdropOpen(false);
-          generateAssignmentMapObject.setBackdropProgress(0);
+          generateAssignmentMapObject.isGenerating(false);
+          generateAssignmentMapObject.setCurrentStatusVerbose("");
+
+
         }
       }
     } else {
       // output dir exists,  no need to call optimization engine
-      generateAssignmentMapObject.setBackdropProgress(80);
+      generateAssignmentMapObject.setCurrentStatusVerbose("hash exists, generating output..")
       try {
         const results = await pollForOptimizationFiles(dirForCheck, file_count)
         console.debug("Polling done:", results)
         generateAssignmentMapObject.setOptimisationEngineData(results);
-        generateAssignmentMapObject.setBackdropProgress(90);
       } catch (e) {
         console.error("An error occurred when polling for results.", e)
-        generateAssignmentMapObject.setBackdropText("")
-        generateAssignmentMapObject.setBackdropOpen(false);
-        generateAssignmentMapObject.setBackdropProgress(0);
+        generateAssignmentMapObject.isGenerating(false);
+        generateAssignmentMapObject.setCurrentStatusVerbose("");
+
       }
     }
 
@@ -177,9 +178,7 @@ export const generateAssignmentMap = async (generateAssignmentMapObject) => {
 
   } else {
     console.error("Error in consolidation request:", response.statusText);
-    generateAssignmentMapObject.setBackdropText("")
-    generateAssignmentMapObject.setBackdropOpen(false);
-    generateAssignmentMapObject.setBackdropProgress(0);
+    generateAssignmentMapObject.isGenerating(false);
   }
 }
 
@@ -205,6 +204,13 @@ export const getGeoboundary = async (generateMapObject) => {
     generateMapObject.updateGenerateMapAlertText("Travel speed data is missing.");
     return
   }
+  if (generateMapObject.travelSpeedType === 'multiple') {
+    if (!generateMapObject.travelSpeedWalkingUnmapped || !generateMapObject.travelSpeedWalkingMapped) {
+      console.log("No walking travel speed data.")
+      generateMapObject.updateGenerateMapAlertText("Travel speed data is missing.");
+      return
+    }
+  }
   if (!generateMapObject.latentPhaseFileMulti) {
     console.log("Latent Phase file is missing.")
     generateMapObject.updateGenerateMapAlertText("Latent Phase file is missing.");
@@ -216,8 +222,11 @@ export const getGeoboundary = async (generateMapObject) => {
     return
   }
   if (generateMapObject.facilityFile && generateMapObject.geofenceFile && generateMapObject.totalDemandFile) {
+    generateMapObject.isGenerating(true);
+    generateMapObject.setCostMatrixData(null);
+    generateMapObject.setCostAndOptimizationData(null);
     generateMapObject.updateGenerateMapAlertText("")
-    generateMapObject.setBackdropOpen(true);
+    generateMapObject.setCurrentStatusVerbose("generating travel speed data...");
     generateMapObject.setBackdropText("Step 1/2: Generating travel speed data...")
     generateMapObject.setBackdropProgress(5);
     try {
@@ -234,6 +243,7 @@ export const getGeoboundary = async (generateMapObject) => {
           'Content-Type': 'application/json'
         }
       });
+      generateMapObject.setCurrentStatusVerbose("processing travel speed data...");
 
       let jsonData = response.data;
       let parsedResponse = JSON.parse(jsonData.results);
@@ -255,6 +265,7 @@ export const getGeoboundary = async (generateMapObject) => {
             speedData);
         if (s3Url) {
           generateMapObject.setBackdropProgress(25);
+          generateMapObject.setCurrentStatusVerbose("generating cost matrix data...");
           generateMapObject.setBackdropText("Step 2/2: Generating cost matrix data...")
 
           const backendResults = await requestToBackend(filename, s3Url, generateMapObject.username, generateMapObject.travelSpeedMotorizedUnmapped, generateMapObject.travelSpeedMotorizedMapped, generateMapObject.setBackdropProgress);
@@ -263,22 +274,27 @@ export const getGeoboundary = async (generateMapObject) => {
             console.log('Backend processing completed successfully:', backendResults);
             generateMapObject.setCostMatrixData(JSON.parse(backendResults.costMatrixResults));
             generateMapObject.setCostAndOptimizationData(JSON.parse(backendResults.costAndOptimizationResults));
+            generateMapObject.setOptimisationEngineData(null);
             generateMapObject.setFileHash(filename)
-            generateMapObject.setBackdropText("")
-            generateMapObject.setBackdropOpen(false);
-            generateMapObject.setBackdropProgress(0);
+            generateMapObject.isGenerating(false);
+            generateMapObject.setCurrentStatusVerbose("");
           } else {
             console.log('Failed to process backend data.');
             //TODO: add feedback here
             generateMapObject.setBackdropText("")
             generateMapObject.setBackdropOpen(false);
             generateMapObject.setBackdropProgress(0);
+            generateMapObject.isGenerating(false);
+            generateMapObject.setCurrentStatusVerbose("");
+
+
           }
         }
       }
 
     } catch (error) {
       console.error('Error reading files or uploading:', error);
+      generateMapObject.setCurrentStatus(status_error_generate_map);
       generateMapObject.setBackdropText("")
       generateMapObject.setBackdropOpen(false);
       generateMapObject.setBackdropProgress(0);
@@ -762,15 +778,6 @@ async function uploadItemToDatabase(username, section, filename, s3Key) {
   }
 }
 
-
-import * as XLSX from 'xlsx';
-import {empirical_data_dir} from "@/app/lib/constants";
-import {TextField} from "@mui/material";
-import {styled} from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import {black} from "next/dist/lib/picocolors";
-import * as React from "react";
-import assert from "node:assert";
 
 export async function combineXlsxFiles(laborOnsetFileLMP, latentPhaseFileNuli, latentPhaseFileMulti, username, uploadDir) {
   // Create a new workbook

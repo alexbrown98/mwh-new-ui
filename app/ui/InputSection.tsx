@@ -14,6 +14,7 @@ export default function InputSection({fieldObject})  {
             </Typography>
             {!fieldObject.sectionName.includes("Labor") && (
                 <Button
+                    disabled={fieldObject.generating}
                     variant="contained"
                     onClick={fieldObject.typeChangeHandler}
                 >Switch to {fieldObject.typeDisplay}

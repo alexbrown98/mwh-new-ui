@@ -1,4 +1,5 @@
 'use client'
+require('dotenv').config();
 
 import dynamic from 'next/dynamic'
 import type {WithAuthenticatorProps} from '@aws-amplify/ui-react';
