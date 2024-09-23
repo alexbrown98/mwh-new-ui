@@ -9,8 +9,10 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
 import {Button} from "@mui/material";
+import BasicPopover from "@/app/ui/popover";
+import SaveSessionPopover from "@/app/ui/SaveSessionPopover";
 
-export default function MenuAppBar({user, logoutHandler, loadSessionHandler, saveSessionHandler}) {
+export default function MenuAppBar({user, logoutHandler, loadSessionHandler, saveSessionHandler, username}) {
     const [anchorEl, setAnchorEl] = React.useState(null);
 
     const handleMenu = (event) => {
@@ -58,10 +60,10 @@ export default function MenuAppBar({user, logoutHandler, loadSessionHandler, sav
                             >
 
                                 <MenuItem onClick={handleClose}>
-                                    <Button onClick={loadSessionHandler} variant="contained" >Load Session</Button>
+                                    <BasicPopover buttonText={"Load Session"} username={username} loadSessionHandler={loadSessionHandler}/>
                                 </MenuItem>
                                 <MenuItem onClick={handleClose}>
-                                    <Button onClick={saveSessionHandler} variant="contained" color='secondary'>Save Session</Button>
+                                    <SaveSessionPopover buttonText={"Save Session"} onSaveSession={saveSessionHandler}/>
                                 </MenuItem>
                                 <MenuItem onClick={handleClose}>
                                     <Button onClick={logoutHandler} variant={'contained'} color={'error'}>Logout</Button>

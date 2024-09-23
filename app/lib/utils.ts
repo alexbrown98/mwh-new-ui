@@ -4,6 +4,7 @@ import {GetObjectCommand, ListObjectsV2Command, S3Client} from "@aws-sdk/client-
 import {fromCognitoIdentityPool} from "@aws-sdk/credential-providers";
 import * as XLSX from 'xlsx';
 import {empirical_data_dir, status_error_generate_map, status_generating_map} from "@/app/lib/constants";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const formatCurrency = (amount) => {
   return (amount / 100).toLocaleString('en-US', {
@@ -12,15 +13,15 @@ export const formatCurrency = (amount) => {
   });
 };
 
-export const fileDbUrl = process.env.NEXT_PUBLIC_FILE_DB_URL;
-export const geoboundaryUrl = process.env.NEXT_PUBLIC_GEOBOUNDARY_URL;
-export const saveSessionUrl = process.env.NEXT_PUBLIC_SAVE_SESSION_URL;
-export const loadSessionurl = process.env.NEXT_PUBLIC_LOAD_SESSION_URL;
-const data_consolidation_lambda_endpoint = process.env.NEXT_PUBLIC_DATA_CONSOLIDATION_URL;
-const optimisation_engine_url = process.env.NEXT_PUBLIC_OPTIMIZATION_ENGINE_URL;
-const lambdaEndpoint = process.env.NEXT_PUBLIC_DISTANCE_TO_ROAD_URL;
-const costMatrixLambdaEndpoint = process.env.NEXT_PUBLIC_COST_MATRIX_URL;
-const costAndOptimizationEndpoint = process.env.NEXT_PUBLIC_COST_OPTIMIZATION_URL;
+export const fileDbUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/databaseFileManager';
+export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/geoboundary';
+export const saveSessionUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/save_user_session';
+export const loadSessionurl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get_user_session';
+const data_consolidation_lambda_endpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/file-consolidation';
+const optimisation_engine_url = 'https://30c2-94-46-236-217.ngrok-free.app/run-optimization';
+const lambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/distance-to-road';
+const costMatrixLambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/cost-matrix';
+const costAndOptimizationEndpoint ='https://30c2-94-46-236-217.ngrok-free.app/process';
 
 
 export const generateAssignmentMap = async (generateAssignmentMapObject) => {
@@ -295,9 +296,8 @@ export const getGeoboundary = async (generateMapObject) => {
     } catch (error) {
       console.error('Error reading files or uploading:', error);
       generateMapObject.setCurrentStatus(status_error_generate_map);
-      generateMapObject.setBackdropText("")
-      generateMapObject.setBackdropOpen(false);
-      generateMapObject.setBackdropProgress(0);
+      generateMapObject.isGenerating(false);
+      generateMapObject.setCurrentStatusVerbose("");
     }
   }
 }
@@ -913,6 +913,38 @@ async function checkS3DirectoryExists(bucket, prefix, expectedFileCount = null) 
   }
 }
 
+export async function getFileFromS3(s3Key) {
+  const bucketName = "user-facility-files"; // Replace with your S3 bucket name
+  const s3Client = new S3Client({
+    region: "eu-west-2", // Replace with your region
+    credentials: fromCognitoIdentityPool({
+      clientConfig: { region: "eu-west-2" }, // Replace with your region
+      identityPoolId: "eu-west-2:f891c50a-12ec-47dd-820e-7f7d224309ad", // Replace with your Identity Pool ID
+    }),
+  });
+
+  try {
+    // Create a command to get the object
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key,
+    });
+
+    // Generate a pre-signed URL
+    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // URL expires in 1 hour
+
+    // Return the signed URL
+    return {
+      url: signedUrl,
+      key: s3Key
+    };
+
+  } catch (error) {
+    console.error("Error retrieving file from S3:", error);
+    throw error;
+  }
+}
+
 
 // Helper function to convert binary string to an ArrayBuffer
 function s2ab(s) {
@@ -922,4 +954,81 @@ function s2ab(s) {
     view[i] = s.charCodeAt(i) & 0xFF; // Fill buffer with binary data
   }
   return buf;
+}
+
+export function extractSpeeds(data) {
+  try {
+    const travelSpeedData = data.demand_data_travel_speed.M;
+
+    if ('single' in travelSpeedData) {
+      // Handle single case
+      const singleData = travelSpeedData.single.M;
+      return {
+        type: 'single',
+        unmappedSpeed: parseInt(singleData.unmapped_speed.N, 10),
+        mappedSpeed: parseInt(singleData.mapped_speed.N, 10)
+      };
+    } else if ('multiple' in travelSpeedData) {
+      // Handle multiple case
+      const multipleData = travelSpeedData.multiple.M;
+      return {
+        type: 'multiple',
+        totalDemand: {
+          type: multipleData.total_demand.M.type.S,
+          value: parseInt(multipleData.total_demand.M.value.S, 10)
+        },
+        walking: {
+          unmappedSpeed: parseInt(multipleData.walking.M.unmapped_speed.N, 10),
+          mappedSpeed: parseInt(multipleData.walking.M.mapped_speed.N, 10)
+        },
+        motorized: {
+          unmappedSpeed: parseInt(multipleData.motorized.M.unmapped_speed.N, 10),
+          mappedSpeed: parseInt(multipleData.motorized.M.mapped_speed.N, 10)
+        }
+      };
+    } else {
+      throw new Error("Unknown demand_data_travel_speed structure");
+    }
+  } catch (error) {
+    console.error("Error extracting speeds:", error);
+    return null;
+  }
+}
+
+export function extractDemandData(data, field) {
+  if (!data[field] || !data[field].M) {
+    return null;
+  }
+
+  const fieldData = data[field].M;
+  const type = Object.keys(fieldData)[0]; // 'single' or 'multiple'
+  const content = fieldData[type].M;
+
+  const result = {
+    type: type,
+    files: []
+  };
+
+  if (type === 'single') {
+    result.files.push({
+      key: content.file_key_1.S,
+      name: content.file_name_1.S
+    });
+  } else if (type === 'multiple') {
+    for (let i = 1; i <= 2; i++) {
+      const fileKey = `file_key_${i}`;
+      const fileName = `file_name_${i}`;
+      if (content[fileKey] && content[fileName]) {
+        result.files.push({
+          key: content[fileKey].S,
+          name: content[fileName].S
+        });
+      }
+    }
+    if (content.total_demand && content.total_demand.M.manual_input) {
+      result.totalDemand = content.total_demand.M.manual_input.S;
+    }
+  }
+
+  return result;
 }

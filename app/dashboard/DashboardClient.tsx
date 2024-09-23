@@ -22,11 +22,12 @@
     import ZoneSelector from "@/app/ui/ZoneSelector";
     import * as XLSX from "xlsx";
     import {
-        generateAssignmentMap,
-        getGeoboundary,
-        loadSessionurl,
-        saveSessionUrl,
-        uploadFileToS3
+    generateAssignmentMap,
+    getGeoboundary,
+    getFileFromS3,
+    loadSessionurl,
+    saveSessionUrl,
+    uploadFileToS3, extractSpeeds, extractDemandData
     } from "@/app/lib/utils";
     import Backdrop from '@mui/material/Backdrop';
     import '@/app/lib/constants'
@@ -81,19 +82,25 @@
         const [backdropProgress, setBackdropProgress] = React.useState(0);
 
         const [facilityFile, setFacilityFile] = React.useState()
+        const [facilityFileKey, setFacilityFileKey] = React.useState()
         const [facilityFileName, setFacilityFileName] = React.useState()
         const [facilityFileJson, setFacilityFileJson] = React.useState()
         const [totalDemandFile, setTotalDemandFile] = React.useState()
+        const [totalDemandFileKey, setTotalDemandFileKey] = React.useState()
         const [totalDemandFileName, setTotalDemandFileName] = React.useState()
         const [geofenceFile, setGeofenceFile] = React.useState()
+        const [geofenceFileKey, setGeofenceFileKey] = React.useState()
         const [geofenceFileName, setGeofenceFileName] = React.useState()
         const [laborOnsetFileLMP, setLaborOnsetFileLMP] = React.useState()
+        const [laborOnsetFileLMPKey, setLaborOnsetFileLMPKey] = React.useState()
         const [laborOnsetFileLMPName, setLaborOnsetFileLMPName] = React.useState()
         const [laborOnsetFileNoLMP, setLaborOnsetFileNoLMP] = React.useState()
         const [laborOnsetFileNoLMPName, setLaborOnsetFileNoLMPName] = React.useState()
         const [latentPhaseFileNuli, setLatentPhaseFileNuli] = React.useState();
+        const [latentPhaseFileNuliKey, setLatentPhaseFileNuliKey] = React.useState();
         const [latentPhaseFileNuliName, setLatentPhaseFileNuliName] = React.useState();
         const [latentPhaseFileMulti, setLatentPhaseFileMulti] = React.useState();
+        const [latentPhaseFileMultiKey, setLatentPhaseFileMultiKey] = React.useState();
         const [latentPhaseFileMultiName, setLatentPhaseFileMultiName] = React.useState();
         const [zone1, setZone1] = React.useState('');
         const [zone1Selected, setZone1Selected] = React.useState('true')
@@ -400,6 +407,7 @@
                 const s3Key = await uploadFileToS3(username, facility_dir, event.target.files[0], event.target.files[0].name);
                 if (s3Key) {
                     console.log("File uploaded to S3 with key:", s3Key);
+                    setFacilityFileKey(s3Key);
                 }
                 processFacilityFile(event.target.files[0])
             }
@@ -449,6 +457,7 @@
                 const s3Key = await uploadFileToS3(username, tif_dir, event.target.files[0], event.target.files[0].name);
                 if (s3Key) {
                     console.log("File uploaded to S3 with key:", s3Key);
+                    setTotalDemandFileKey(s3Key);
                 }
             }
         }
@@ -462,6 +471,7 @@
                 setGeofenceFileName(event.target.files[0].name)
                 const s3Key = await uploadFileToS3(username, geoplot_dir, event.target.files[0], event.target.files[0].name);
                 if (s3Key) {
+                    setGeofenceFileKey(s3Key);
                     console.log("File uploaded to S3 with key:", s3Key);
                 }
             }
@@ -478,6 +488,7 @@
                 const s3Key = await uploadFileToS3(username, lmp_dir, event.target.files[0], event.target.files[0].name);
                 if (s3Key) {
                     console.log("File uploaded to S3 with key:", s3Key);
+                    setLaborOnsetFileLMPKey(s3Key);
                 }
             }
         }
@@ -504,6 +515,7 @@
                 const s3Key = await uploadFileToS3(username, nulliparous_dir, event.target.files[0], event.target.files[0].name);
                 if (s3Key) {
                     console.log("File uploaded to S3 with key:", s3Key);
+                    setLatentPhaseFileNuliKey(s3Key);
                 }
             }
         }
@@ -520,6 +532,7 @@
                 const s3Key = await uploadFileToS3(username, multiparous_dir, event.target.files[0], event.target.files[0].name);
                 if (s3Key) {
                     console.log("File uploaded to S3 with key:", s3Key);
+                    setLatentPhaseFileMultiKey(s3Key);
                 }
             }
         }
@@ -646,6 +659,8 @@
             multiLabel2: "Nulliparous",
             fileObject_1: latentPhaseFileObjectMulti,
             fileObject_2: latentPhaseFileObjectNuli,
+            fileKey_1: latentPhaseFileMultiKey,
+            fileKey_2: latentPhaseFileNuliKey,
             generating
         }
         const laborObject = {
@@ -662,13 +677,15 @@
             multiLabel2: "",
             fileObject_1: laborOnsetFileObjectLMP,
             fileObject_2: null,
+            fileKey_1: laborOnsetFileLMPKey,
+            fileKey_2: null,
             generating
         }
 
-        const handleSaveSession = async () => {
+        const handleSaveSession = async (session) => {
             console.log("Saving session.")
             try {
-                const result = await createSessionObject();
+                const result = await createSessionObject(session);
                 console.log(result); // Handle success message or update UI
                 // Optionally, update some state or provide feedback to the user
             } catch (error) {
@@ -682,22 +699,21 @@
             setCurrentStatusVerbose
         }
 
-        const createSessionObject = async () => {
+        const createSessionObject = async (session) => {
             let latentPhaseSessionObject = createSessionDemandObject(latentPhaseObject)
             let laborOnsetSessionObject = createSessionDemandObject(laborObject)
             let travelSpeedSessionObject = createSessionTravelSpeedObject(travelSpeedObject)
-            setUsername(username)
-            setSessionName("sessionNewUi")
             const sessionObject = {
                 username,
-                session_name: sessionName,
-                session_id: username + '_' + sessionName,
-                demand_data_geofence_file_name: geofenceFileName,
-                demand_data_tif_file_name: totalDemandFileName,
+                session_name: session,
+                session_id: username + '_' + session,
+                demand_data_geofence_key: geofenceFileKey,
+                demand_data_tif_key: totalDemandFileKey,
                 demand_data_labor_onset: laborOnsetSessionObject,
                 demand_data_latent_phase: latentPhaseSessionObject,
                 demand_data_travel_speed: travelSpeedSessionObject,
                 facility_data: facilityFileJson,
+                facility_data_key: facilityFileKey,
                 // TODO: remove hardcoded policy objective
                 policy_definition: {
                     num_zones: numZonesSelector,
@@ -778,14 +794,17 @@
             if (fieldObject.type === 'single') {
                 demandObject = {
                     single: {
-                        file_name: fieldObject.fileObject_1.fileName
+                        file_name_1: fieldObject.fileObject_1.fileName,
+                        file_key_1: fieldObject.fileKey_1
                     }
                 };
             } else if (fieldObject.type === 'multiple') {
                 demandObject = {
                     multiple: {
-                        multiparous_file_name: fieldObject.fileObject_1.fileName,
-                        nuliparous_file_name: fieldObject.fileObject_2.fileName,
+                        file_name_1: fieldObject.fileObject_1.fileName,
+                        file_name_2: fieldObject.fileObject_2.fileName,
+                        file_key_1: fieldObject.fileKey_1,
+                        file_key_2: fieldObject.fileKey_2,
                         total_demand: {
                             manual_input: fieldObject.demandValue
                         }
@@ -795,14 +814,11 @@
             return demandObject;
         }
 
-        const loadSession = async () => {
-            setUsername(username)
-            setSessionName("sessionNewUi")
-
-            console.log(`Getting user session for ${sessionName}`);
+        const loadSession = async (session) => {
+            console.log(`Getting user session for ${session}`);
             const payload = {
-                username: "74877d13-99d1-4164-aaaa-0884d86a223c",
-                session_name: "sessionNewUi"
+                username: username,
+                session_name: session
             };
 
             try {
@@ -817,7 +833,7 @@
                 if (response.ok) {
                     const sessionData = await response.json();
                     console.log(sessionData)
-                    populateSessionData(sessionData)
+                    await populateSessionData(sessionData)
 
                     return sessionData;
                 } else {
@@ -828,17 +844,93 @@
             }
         }
 
-        const populateSessionData = (sessionObject) => {
+        async function populateSessionData(sessionObject){
             //TODO: complete this, and add file loading
-            setGeofenceFileName(sessionObject.demand_data_geofence_file_name.S)
-            setTotalDemandFileName(sessionObject.demand_data_tif_file_name.S)
+            if (sessionObject.demand_data_tif_key) {
+                await emulateFileUploadFromS3(sessionObject.demand_data_tif_key.S,
+                    setTotalDemandFile, setTotalDemandFileName, setTotalDemandFileKey);
+            }
+            if (sessionObject.demand_data_geofence_key) {
+                await emulateFileUploadFromS3(sessionObject.demand_data_geofence_key.S,
+                    setGeofenceFile, setGeofenceFileName, setGeofenceFileKey);
+            }
+            const travel_speed_obj = extractSpeeds(sessionObject)
+            if (travel_speed_obj && travel_speed_obj.type === 'single') {
+                setTravelSpeedType('single');
+                setTravelSpeedTypeDisplay('multiple')
+                setTravelSpeedMotorizedMapped(travel_speed_obj.mappedSpeed);
+                setTravelSpeedMotorizedUnmapped(travel_speed_obj.unmappedSpeed);
+            } else if (travel_speed_obj && travel_speed_obj.type === 'multiple') {
+                setTravelSpeedType('multiple');
+                setTravelSpeedTypeDisplay('single')
+                setTravelSpeedMotorizedMapped(travel_speed_obj.motorized.mappedSpeed);
+                setTravelSpeedMotorizedUnmapped(travel_speed_obj.motorized.unmappedSpeed);
+                setTravelSpeedWalkingMapped(travel_speed_obj.walking.mappedSpeed);
+                setTravelSpeedWalkingUnmapped(travel_speed_obj.walking.unmappedSpeed);
+            }
+            if (sessionObject.demand_data_labor_onset || sessionObject.demand_data_latent_phase) {
+                const extractedData = extractLaborOnsetAndLatentPhase(sessionObject);
+                if (extractedData.laborOnset && extractedData.laborOnset.type === 'single') {
+                    await emulateFileUploadFromS3(extractedData.laborOnset.files.at(0).key, setLaborOnsetFileLMP,
+                        setLaborOnsetFileLMPName, setLaborOnsetFileLMPKey)
+                }
+                if (extractedData.latentPhase && extractedData.latentPhase.type === 'single') {
+                    await emulateFileUploadFromS3(extractedData.latentPhase.files.at(0).key, setLatentPhaseFileMulti,
+                        setLatentPhaseFileMultiName, setLatentPhaseFileMultiKey)
+                } else if (extractedData.latentPhase && extractedData.latentPhase.type === 'multiple') {
+                    setLatentPhaseType('multiple');
+                    setLatentPhaseTypeDisplay('single')
+                    await emulateFileUploadFromS3(extractedData.latentPhase.files.at(0).key, setLatentPhaseFileMulti,
+                        setLatentPhaseFileMultiName, setLatentPhaseFileMultiKey)
+                    await emulateFileUploadFromS3(extractedData.latentPhase.files.at(1).key, setLatentPhaseFileNuli,
+                        setLatentPhaseFileNuliName, setLatentPhaseFileNuliKey)
+                }
+            }
         }
+
 
         const getColorTheme = () => {
             if  (currentStatus === status_ready_generate_map) return "success";
             if (currentStatus === status_generating_map) return "info";
             return "warning";
         };
+
+        function extractLaborOnsetAndLatentPhase(data) {
+            return {
+                laborOnset: extractDemandData(data, 'demand_data_labor_onset'),
+                latentPhase: extractDemandData(data, 'demand_data_latent_phase')
+            };
+        }
+
+        async function emulateFileUploadFromS3(s3Key, setFile, setFileName, setFileKey) {
+            try {
+                // Get the signed URL for the file
+                const fileInfo = await getFileFromS3(s3Key);
+
+                // Fetch the file content
+                const response = await fetch(fileInfo.url);
+                const blob = await response.blob();
+
+                // Create a File object
+                const fileName = s3Key.split('/').pop(); // Extract filename from S3 key
+                const file = new File([blob], fileName, { type: blob.type });
+
+                // Emulate the file upload process
+                setFile(file);
+                setFileName(fileName);
+
+                // Since the file is already in S3, we don't need to upload it again
+                // But we can still set the S3 key
+                setFileKey(s3Key);
+
+                console.log("File loaded from S3 with key:", s3Key);
+
+                return file;
+            } catch (error) {
+                console.error("Error emulating file upload from S3:", error);
+                throw error;
+            }
+        }
 
         React.useEffect( () => {
             console.debug(currentStatus);
@@ -879,7 +971,7 @@
                                 sx={{ width: '50%', mt: 2 }}  // Adjust width and margin-top for spacing
                             />
                         </Backdrop>
-                        <Navbar user={user} logoutHandler={signOut} loadSessionHandler={loadSession} saveSessionHandler={handleSaveSession}/>
+                        <Navbar user={user} logoutHandler={signOut} loadSessionHandler={loadSession} saveSessionHandler={handleSaveSession} username={username}/>
                         <HorizontalNonLinearStepper mainPageActiveStepHandler={setActiveStep} step1CheckObject={step1CheckObject}/>
 
                         {/*demand data input*/}
@@ -1281,6 +1373,7 @@
                             />
                             {assignmentMapRows && (
                                 <DataGrid
+                                    sx={{mt:5}}
                                     rows={assignmentMapRows}
                                     columns={assignmentMapCols}
                                     initialState={{
