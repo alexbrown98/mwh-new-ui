@@ -18,10 +18,10 @@ export const geoboundaryUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaw
 export const saveSessionUrl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/save_user_session';
 export const loadSessionurl = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/get_user_session';
 const data_consolidation_lambda_endpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/file-consolidation';
-const optimisation_engine_url = 'https://30c2-94-46-236-217.ngrok-free.app/run-optimization';
+const optimisation_engine_url = "https://opt.ewser.com/run-optimization";
 const lambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/distance-to-road';
 const costMatrixLambdaEndpoint = 'https://rxhlpn2bd8.execute-api.eu-west-2.amazonaws.com/dev/cost-matrix';
-const costAndOptimizationEndpoint ='https://30c2-94-46-236-217.ngrok-free.app/process';
+const costAndOptimizationEndpoint ='https://cmatrix.ewser.com/process';
 
 
 export const generateAssignmentMap = async (generateAssignmentMapObject) => {
